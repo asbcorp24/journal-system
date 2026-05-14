@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>@yield('title', 'СЭПЖ')</title>
+
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+
+    <style>
+        body {
+            background: #0f172a;
+            color: #e5e7eb;
+        }
+
+        .navbar {
+            background: #020617;
+            border-bottom: 1px solid #1e293b;
+        }
+
+        .sidebar {
+            min-height: calc(100vh - 56px);
+            background: #020617;
+            border-right: 1px solid #1e293b;
+        }
+
+        .sidebar a {
+            color: #cbd5e1;
+            text-decoration: none;
+            display: block;
+            padding: 12px 16px;
+            border-radius: 10px;
+            margin-bottom: 6px;
+        }
+
+        .sidebar a:hover,
+        .sidebar a.active {
+            background: #1e293b;
+            color: #ffffff;
+        }
+
+        .content {
+            padding: 24px;
+        }
+
+        .card {
+            background: #111827;
+            color: #e5e7eb;
+            border: 1px solid #1f2937;
+            border-radius: 16px;
+        }
+
+        .table {
+            color: #e5e7eb;
+        }
+
+        .table thead {
+            background: #1f2937;
+        }
+
+        .form-control,
+        .form-select {
+            background-color: #020617;
+            color: #e5e7eb;
+            border-color: #334155;
+        }
+
+        .form-control:focus,
+        .form-select:focus {
+            background-color: #020617;
+            color: #ffffff;
+            border-color: #38bdf8;
+            box-shadow: 0 0 0 .2rem rgba(56, 189, 248, .2);
+        }
+
+        .modal-content {
+            background: #111827;
+            color: #e5e7eb;
+            border: 1px solid #334155;
+        }
+
+        .btn-primary {
+            background: #2563eb;
+            border-color: #2563eb;
+        }
+
+        .user-badge {
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 12px;
+            padding: 6px 12px;
+            color: #cbd5e1;
+        }
+
+        .journal-card {
+            transition: .15s;
+            cursor: pointer;
+        }
+
+        .journal-card:hover {
+            transform: translateY(-2px);
+            border-color: #38bdf8;
+        }
+
+        .pagination .page-link {
+            background: #020617;
+            border-color: #334155;
+            color: #e5e7eb;
+        }
+
+        .pagination .active .page-link {
+            background: #2563eb;
+            border-color: #2563eb;
+        }
+        .mobile-menu-btn {
+            display: none;
+        }
+
+        .mobile-sidebar {
+            background: #020617;
+            color: #e5e7eb;
+        }
+
+        .mobile-sidebar .offcanvas-header {
+            border-bottom: 1px solid #1e293b;
+        }
+
+        .mobile-sidebar a {
+            color: #cbd5e1;
+            text-decoration: none;
+            display: block;
+            padding: 12px 16px;
+            border-radius: 10px;
+            margin-bottom: 6px;
+        }
+
+        .mobile-sidebar a:hover,
+        .mobile-sidebar a.active {
+            background: #1e293b;
+            color: #ffffff;
+        }
+
+        @media (max-width: 767.98px) {
+            .mobile-menu-btn {
+                display: inline-flex;
+            }
+
+            .desktop-sidebar {
+                display: none;
+            }
+
+            .content {
+                padding: 16px;
+            }
+
+            .navbar {
+                min-height: 56px;
+            }
+
+            .navbar-brand {
+                font-size: 18px;
+            }
+        }
+    </style>
+
+    @stack('styles')
+</head>
+<body>
+
+<nav class="navbar navbar-expand-lg navbar-dark px-3">
+    <button class="btn btn-outline-light btn-sm me-2 mobile-menu-btn"
+            type="button"
+            data-bs-toggle="offcanvas"
+            data-bs-target="#mobileSidebar"
+            aria-controls="mobileSidebar">
+        <i class="bi bi-list"></i>
+    </button>
+
+    <a class="navbar-brand fw-bold" href="{{ route('user.dashboard') }}">
+        СЭПЖ
+    </a>
+
+    <div class="ms-auto d-flex align-items-center gap-3">
+        <div class="user-badge d-none d-md-block">
+            {{ session('user_name') }}
+            <span class="text-secondary">
+                / {{ session('user_role') }}
+            </span>
+        </div>
+
+        <a href="{{ route('user.logout') }}" class="btn btn-outline-light btn-sm">
+            Выйти
+        </a>
+    </div>
+</nav>
+
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-md-2 sidebar desktop-sidebar p-3">
+            <a href="{{ route('user.dashboard') }}"
+               class="{{ request()->routeIs('user.dashboard') ? 'active' : '' }}">
+                <i class="bi bi-journal-text"></i>
+                Мои журналы
+            </a>
+
+            <a href="#">
+                <i class="bi bi-clock-history"></i>
+                Мои записи
+            </a>
+
+            @if(session('user_role') === 'foreman' || session('user_role') === 'admin')
+                <a href="#">
+                    <i class="bi bi-check2-square"></i>
+                    Проверка записей
+                </a>
+            @endif
+            @if(session('user_role') === 'admin')
+                <a href="{{ route('user.reports.index') }}"
+                   class="{{ request()->routeIs('user.reports.*') ? 'active' : '' }}">
+                    <i class="bi bi-file-earmark-spreadsheet"></i>
+                    Отчёты
+                </a>
+            @endif
+        </div>
+
+        <div class="col-12 col-md-10 content">
+            @yield('content')
+        </div>
+    </div>
+</div>
+<div class="offcanvas offcanvas-start mobile-sidebar"
+     tabindex="-1"
+     id="mobileSidebar"
+     aria-labelledby="mobileSidebarLabel">
+
+    <div class="offcanvas-header">
+        <h5 class="offcanvas-title fw-bold" id="mobileSidebarLabel">
+            СЭПЖ
+        </h5>
+
+        <button type="button"
+                class="btn-close btn-close-white"
+                data-bs-dismiss="offcanvas"
+                aria-label="Закрыть"></button>
+    </div>
+
+    <div class="offcanvas-body">
+        <div class="mb-3 user-badge">
+            {{ session('user_name') }}
+            <div class="text-secondary small">
+                {{ session('user_role') }}
+            </div>
+        </div>
+
+        <a href="{{ route('user.dashboard') }}"
+           class="{{ request()->routeIs('user.dashboard') ? 'active' : '' }}">
+            <i class="bi bi-journal-text"></i>
+            Мои журналы
+        </a>
+
+        <a href="#">
+            <i class="bi bi-clock-history"></i>
+            Мои записи
+        </a>
+
+        @if(session('user_role') === 'foreman' || session('user_role') === 'admin')
+            <a href="#">
+                <i class="bi bi-check2-square"></i>
+                Проверка записей
+            </a>
+        @endif
+
+        @if(session('user_role') === 'admin')
+            <a href="{{ route('user.reports.index') }}"
+               class="{{ request()->routeIs('user.reports.*') ? 'active' : '' }}">
+                <i class="bi bi-file-earmark-spreadsheet"></i>
+                Отчёты
+            </a>
+        @endif
+
+        <hr class="border-secondary">
+
+        <a href="{{ route('user.logout') }}">
+            <i class="bi bi-box-arrow-right"></i>
+            Выйти
+        </a>
+    </div>
+</div>
+<div class="position-fixed bottom-0 end-0 p-3" style="z-index: 9999">
+    <div id="toastBox" class="toast align-items-center text-bg-primary border-0" role="alert">
+        <div class="d-flex">
+            <div class="toast-body" id="toastMessage">
+                Сообщение
+            </div>
+
+            <button type="button"
+                    class="btn-close btn-close-white me-2 m-auto"
+                    data-bs-dismiss="toast"></button>
+        </div>
+    </div>
+</div>
+
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+    $.ajaxSetup({
+        headers: {
+            'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
+        }
+    });
+
+    function showToast(message, type = 'primary') {
+        let toastBox = $('#toastBox');
+
+        toastBox.removeClass('text-bg-primary text-bg-success text-bg-danger text-bg-warning');
+        toastBox.addClass('text-bg-' + type);
+
+        $('#toastMessage').text(message);
+
+        let toast = new bootstrap.Toast(document.getElementById('toastBox'));
+        toast.show();
+    }
+
+    function showAjaxErrors(xhr) {
+        if (xhr.status === 401) {
+            window.location.href = "{{ route('user.login') }}";
+            return;
+        }
+
+        if (xhr.status === 422) {
+            let errors = xhr.responseJSON.errors;
+            let message = xhr.responseJSON.message || 'Ошибка заполнения формы';
+
+            if (errors) {
+                message = Object.values(errors).map(function (item) {
+                    return item[0];
+                }).join('\n');
+            }
+
+            showToast(message, 'danger');
+            return;
+        }
+
+        if (xhr.responseJSON && xhr.responseJSON.message) {
+            showToast(xhr.responseJSON.message, 'danger');
+            return;
+        }
+
+        showToast('Ошибка запроса', 'danger');
+    }
+
+    function escapeHtml(text) {
+        if (text === null || text === undefined) {
+            return '';
+        }
+
+        return $('<div>').text(text).html();
+    }
+    function escapeHtml(text) {
+        if (text === null || text === undefined) {
+            return '';
+        }
+
+        return $('<div>').text(text).html();
+    }
+</script>
+
+@stack('scripts')
+
+</body>
+</html>
