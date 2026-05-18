@@ -22,10 +22,17 @@
             </div>
         </div>
 
-        <button class="btn btn-primary" id="addEntryBtn">
-            <i class="bi bi-plus-lg"></i>
-            Добавить запись
-        </button>
+        <div class="d-flex gap-2">
+            <button class="btn btn-outline-light" id="printJournalBtn">
+                <i class="bi bi-printer"></i>
+                Печать
+            </button>
+
+            <button class="btn btn-primary" id="addEntryBtn">
+                <i class="bi bi-plus-lg"></i>
+                Добавить запись
+            </button>
+        </div>
     </div>
 
     <div class="card mb-4">
@@ -143,6 +150,13 @@
                     @endif
 
                     <div class="row g-3" id="dynamicForm"></div>
+                    <div class="mt-3">
+                        <label class="form-label">Комментарий к изменению</label>
+                        <textarea id="changeComment"
+                                  class="form-control"
+                                  rows="2"
+                                  placeholder="Укажите, что было исправлено"></textarea>
+                    </div>
                 </div>
 
                 <div class="modal-footer">
@@ -159,7 +173,77 @@
             </form>
         </div>
     </div>
+    <div class="modal fade" id="commentsModal" tabindex="-1">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        Комментарии к записи
+                    </h5>
 
+                    <button type="button"
+                            class="btn-close btn-close-white"
+                            data-bs-dismiss="modal"></button>
+                </div>
+
+                <div class="modal-body">
+                    <input type="hidden" id="commentsEntryId">
+                    <input type="hidden" id="commentParentId">
+
+                    <div id="commentsTree" class="mb-4"></div>
+
+                    <div class="card">
+                        <div class="card-body">
+                            <div class="mb-2 fw-bold" id="commentFormTitle">
+                                Новый комментарий
+                            </div>
+
+                            <textarea id="newCommentText"
+                                      class="form-control"
+                                      rows="3"
+                                      placeholder="Введите комментарий"></textarea>
+
+                            <div class="d-flex gap-2 mt-3">
+                                <button class="btn btn-primary" id="sendCommentBtn">
+                                    Отправить
+                                </button>
+
+                                <button class="btn btn-outline-light d-none" id="cancelReplyBtn">
+                                    Отменить ответ
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="logsModal" tabindex="-1">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        История изменений записи
+                    </h5>
+
+                    <button type="button"
+                            class="btn-close btn-close-white"
+                            data-bs-dismiss="modal"></button>
+                </div>
+
+                <div class="modal-body">
+                    <input type="hidden" id="logsEntryId">
+
+                    <div id="logsContainer">
+                        <div class="text-center text-secondary py-4">
+                            Загрузка...
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 @endsection
 
 @push('scripts')
@@ -529,12 +613,19 @@
 
                 else if (field.type === 'calc') {
                     html += `
-                    <input type="text"
-                           class="form-control journal-field"
-                           data-key="${field.key}"
-                           value="${escapeHtml(value)}"
-                           placeholder="${escapeHtml(field.formula || '')}">
-                `;
+        <input type="number"
+               step="any"
+               class="form-control journal-field calc-field"
+               data-key="${field.key}"
+               data-formula="${escapeHtml(field.formula || '')}"
+               value="${escapeHtml(value)}"
+               placeholder="${escapeHtml(field.formula || '')}"
+               readonly>
+
+        <div class="text-secondary small mt-1">
+            Формула: ${escapeHtml(field.formula || '')}
+        </div>
+    `;
                 }
 
                 else {
@@ -551,6 +642,7 @@
             });
 
             $('#dynamicForm').html(html);
+            recalculateCalcFields();
         }
 
         function collectFormData() {
@@ -570,7 +662,7 @@
             if ($('#entryDivisionId').length) {
                 $('#entryDivisionId').val('');
             }
-
+            $('#changeComment').val('');
             renderDynamicForm({});
         }
 
@@ -591,7 +683,8 @@
                 : `/journals/${journalId}/entries`;
 
             let payload = {
-                data: collectFormData()
+                data: collectFormData(),
+                change_comment: $('#changeComment').val()
             };
 
             if ($('#entryDivisionId').length) {
@@ -779,7 +872,22 @@
                 <i class="bi bi-pencil"></i>
             </button>
         `;
+
             }
+            html += `
+    <button class="btn btn-outline-light comments-entry"
+            data-id="${entry.id}"
+            title="Комментарии">
+        <i class="bi bi-chat-dots"></i>
+    </button>
+`;
+            html += `
+    <button class="btn btn-outline-secondary logs-entry"
+            data-id="${entry.id}"
+            title="История изменений">
+        <i class="bi bi-clock-history"></i>
+    </button>
+`;
 
             html += canChangeStatusButtons(entry);
 
@@ -797,9 +905,482 @@
 
             return html;
         }
+        $('#printJournalBtn').on('click', function () {
+            let params = new URLSearchParams();
+
+            if ($('#dateFrom').val()) {
+                params.append('date_from', $('#dateFrom').val());
+            }
+
+            if ($('#dateTo').val()) {
+                params.append('date_to', $('#dateTo').val());
+            }
+
+            if ($('#statusFilter').val()) {
+                params.append('status', $('#statusFilter').val());
+            }
+
+            if ($('#searchInput').val()) {
+                params.append('search', $('#searchInput').val());
+            }
+
+            if ($('#divisionFilter').length && $('#divisionFilter').val()) {
+                params.append('division_id', $('#divisionFilter').val());
+            }
+
+            let url = `/journals/${journalId}/print`;
+
+            if (params.toString()) {
+                url += '?' + params.toString();
+            }
+
+            window.open(url, '_blank');
+        });
         renderTableHead();
         renderDynamicForm({});
         loadEntries();
+        let commentsModal = new bootstrap.Modal(document.getElementById('commentsModal'));
 
+        function renderCommentsTree(comments, level = 0) {
+            let html = '';
+
+            if (!comments || comments.length === 0) {
+                if (level === 0) {
+                    return `
+                <div class="text-secondary text-center py-4">
+                    Комментариев пока нет
+                </div>
+            `;
+                }
+
+                return '';
+            }
+
+            comments.forEach(function (comment) {
+                html += `
+            <div class="border rounded p-3 mb-2" style="margin-left:${level * 24}px; border-color:#334155 !important;">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <div class="fw-bold">
+                            ${comment.user ? escapeHtml(comment.user.name) : 'Пользователь'}
+                        </div>
+
+                        <div class="text-secondary small">
+                            ${escapeHtml(comment.created_at || '')}
+                            ${comment.edited_at ? ' / изменено: ' + escapeHtml(comment.edited_at) : ''}
+                        </div>
+                    </div>
+
+                    <div class="btn-group btn-group-sm">
+                        <button class="btn btn-outline-light reply-comment"
+                                data-id="${comment.id}"
+                                data-user="${comment.user ? escapeHtml(comment.user.name) : ''}">
+                            Ответить
+                        </button>
+
+                        <button class="btn btn-outline-info edit-comment"
+                                data-id="${comment.id}"
+                                data-text="${escapeHtml(comment.comment)}">
+                            Редактировать
+                        </button>
+                    </div>
+                </div>
+
+                <div class="mt-2">
+                    ${escapeHtml(comment.comment)}
+                </div>
+
+                ${comment.editor ? `
+                    <div class="text-secondary small mt-2">
+                        Редактировал: ${escapeHtml(comment.editor.name)}
+                    </div>
+                ` : ''}
+
+                <div class="mt-3">
+                    ${renderCommentsTree(comment.replies || [], level + 1)}
+                </div>
+            </div>
+        `;
+            });
+
+            return html;
+        }
+
+        function loadEntryComments(entryId) {
+            $('#commentsTree').html(`
+        <div class="text-center text-secondary py-4">
+            Загрузка...
+        </div>
+    `);
+
+            $.ajax({
+                url: `/journals/${journalId}/entries/${entryId}/comments`,
+                method: "GET",
+                success: function (response) {
+                    $('#commentsTree').html(renderCommentsTree(response.comments));
+                },
+                error: function (xhr) {
+                    showAjaxErrors(xhr);
+                }
+            });
+        }
+
+        $(document).on('click', '.comments-entry', function () {
+            let entryId = $(this).data('id');
+
+            $('#commentsEntryId').val(entryId);
+            $('#commentParentId').val('');
+            $('#newCommentText').val('');
+            $('#commentFormTitle').text('Новый комментарий');
+            $('#cancelReplyBtn').addClass('d-none');
+
+            commentsModal.show();
+
+            loadEntryComments(entryId);
+        });
+
+        $(document).on('click', '.reply-comment', function () {
+            let commentId = $(this).data('id');
+            let userName = $(this).data('user');
+
+            $('#commentParentId').val(commentId);
+            $('#newCommentText').val('');
+            $('#commentFormTitle').text('Ответ на комментарий: ' + userName);
+            $('#cancelReplyBtn').removeClass('d-none');
+        });
+
+        $('#cancelReplyBtn').on('click', function () {
+            $('#commentParentId').val('');
+            $('#newCommentText').val('');
+            $('#commentFormTitle').text('Новый комментарий');
+            $('#cancelReplyBtn').addClass('d-none');
+        });
+
+        $('#sendCommentBtn').on('click', function () {
+            let entryId = $('#commentsEntryId').val();
+            let comment = $('#newCommentText').val().trim();
+            let parentId = $('#commentParentId').val();
+
+            if (!comment) {
+                showToast('Введите комментарий', 'warning');
+                return;
+            }
+
+            $.ajax({
+                url: `/journals/${journalId}/entries/${entryId}/comments`,
+                method: "POST",
+                data: {
+                    comment: comment,
+                    parent_id: parentId
+                },
+                success: function (response) {
+                    showToast(response.message, 'success');
+
+                    $('#newCommentText').val('');
+                    $('#commentParentId').val('');
+                    $('#commentFormTitle').text('Новый комментарий');
+                    $('#cancelReplyBtn').addClass('d-none');
+
+                    loadEntryComments(entryId);
+                    loadEntries(currentPage);
+                },
+                error: function (xhr) {
+                    showAjaxErrors(xhr);
+                }
+            });
+        });
+        $(document).on('click', '.edit-comment', function () {
+            let commentId = $(this).data('id');
+            let oldText = $(this).data('text');
+            let entryId = $('#commentsEntryId').val();
+
+            let newText = prompt('Изменить комментарий', oldText);
+
+            if (newText === null) {
+                return;
+            }
+
+            newText = newText.trim();
+
+            if (!newText) {
+                showToast('Комментарий не может быть пустым', 'warning');
+                return;
+            }
+
+            $.ajax({
+                url: `/journals/${journalId}/entries/${entryId}/comments/${commentId}`,
+                method: "POST",
+                data: {
+                    comment: newText
+                },
+                success: function (response) {
+                    showToast(response.message, 'success');
+
+                    loadEntryComments(entryId);
+                    loadEntries(currentPage);
+                },
+                error: function (xhr) {
+                    showAjaxErrors(xhr);
+                }
+            });
+        });
+        let logsModal = new bootstrap.Modal(document.getElementById('logsModal'));
+
+        function actionLabel(action) {
+            const map = {
+                created: 'Создание записи',
+                updated: 'Изменение записи',
+                deleted: 'Удаление записи',
+                status_changed: 'Смена статуса',
+                comment_added: 'Добавление комментария',
+                comment_updated: 'Редактирование комментария'
+            };
+
+            return map[action] || action;
+        }
+
+        function statusLabel(status) {
+            const map = {
+                submitted: 'На проверке',
+                approved: 'Подтверждено',
+                rejected: 'Отклонено'
+            };
+
+            return map[status] || status || '—';
+        }
+
+        function formatLogValue(value) {
+            if (value === null || value === undefined || value === '') {
+                return '<span class="text-secondary">—</span>';
+            }
+
+            if (typeof value === 'object') {
+                return escapeHtml(JSON.stringify(value, null, 2));
+            }
+
+            return escapeHtml(value);
+        }
+
+        function renderLogDataDiff(oldData, newData) {
+            oldData = oldData || {};
+            newData = newData || {};
+
+            let keys = [];
+
+            Object.keys(oldData).forEach(function (key) {
+                if (!keys.includes(key)) {
+                    keys.push(key);
+                }
+            });
+
+            Object.keys(newData).forEach(function (key) {
+                if (!keys.includes(key)) {
+                    keys.push(key);
+                }
+            });
+
+            if (keys.length === 0) {
+                return '';
+            }
+
+            let html = `
+        <div class="table-responsive mt-3">
+            <table class="table table-dark table-sm table-bordered align-middle">
+                <thead>
+                    <tr>
+                        <th style="width: 25%;">Поле</th>
+                        <th>Было</th>
+                        <th>Стало</th>
+                    </tr>
+                </thead>
+                <tbody>
+    `;
+
+            keys.forEach(function (key) {
+                let oldValue = oldData[key];
+                let newValue = newData[key];
+
+                let changed = JSON.stringify(oldValue) !== JSON.stringify(newValue);
+
+                html += `
+            <tr class="${changed ? 'table-warning' : ''}">
+                <td>${escapeHtml(getFieldLabel(key))}</td>
+                <td><pre class="mb-0 text-light small">${formatLogValue(oldValue)}</pre></td>
+                <td><pre class="mb-0 text-light small">${formatLogValue(newValue)}</pre></td>
+            </tr>
+        `;
+            });
+
+            html += `
+                </tbody>
+            </table>
+        </div>
+    `;
+
+            return html;
+        }
+
+        function renderLogs(logs) {
+            if (!logs || logs.length === 0) {
+                return `
+            <div class="text-center text-secondary py-5">
+                История изменений пока пустая
+            </div>
+        `;
+            }
+
+            let html = '';
+
+            logs.forEach(function (log) {
+                html += `
+            <div class="card mb-3">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                        <div>
+                            <div class="fw-bold">
+                                ${escapeHtml(actionLabel(log.action))}
+                            </div>
+
+                            <div class="text-secondary small">
+                                ${log.user ? escapeHtml(log.user.name) : 'Система'}
+                                ${log.created_at ? ' / ' + escapeHtml(log.created_at) : ''}
+                                ${log.ip_address ? ' / IP: ' + escapeHtml(log.ip_address) : ''}
+                            </div>
+                        </div>
+
+                        <span class="badge bg-secondary">
+                            #${log.id}
+                        </span>
+                    </div>
+        `;
+
+                if (log.old_status || log.new_status) {
+                    html += `
+                <div class="mb-2">
+                    <span class="text-secondary">Статус:</span>
+                    <span class="badge bg-dark">${escapeHtml(statusLabel(log.old_status))}</span>
+                    →
+                    <span class="badge bg-info text-dark">${escapeHtml(statusLabel(log.new_status))}</span>
+                </div>
+            `;
+                }
+
+                if (log.comment) {
+                    html += `
+                <div class="alert alert-secondary py-2 mb-2">
+                    ${escapeHtml(log.comment)}
+                </div>
+            `;
+                }
+
+                html += renderLogDataDiff(log.old_data, log.new_data);
+
+                html += `
+                </div>
+            </div>
+        `;
+            });
+
+            return html;
+        }
+
+        function loadEntryLogs(entryId) {
+            $('#logsContainer').html(`
+        <div class="text-center text-secondary py-4">
+            Загрузка...
+        </div>
+    `);
+
+            $.ajax({
+                url: `/journals/${journalId}/entries/${entryId}/logs`,
+                method: "GET",
+                success: function (response) {
+                    $('#logsContainer').html(renderLogs(response.logs));
+                },
+                error: function (xhr) {
+                    showAjaxErrors(xhr);
+                }
+            });
+        }
+
+        $(document).on('click', '.logs-entry', function () {
+            let entryId = $(this).data('id');
+
+            $('#logsEntryId').val(entryId);
+
+            logsModal.show();
+
+            loadEntryLogs(entryId);
+        });
+
+        function getFormNumericValue(key) {
+            let input = $(`.journal-field[data-key="${key}"]`);
+            let value = input.val();
+
+            if (value === null || value === undefined || value === '') {
+                return 0;
+            }
+
+            value = String(value).replace(',', '.');
+
+            if (!$.isNumeric(value)) {
+                return 0;
+            }
+
+            return parseFloat(value);
+        }
+
+        function safeCalculateFormula(formula) {
+            if (!formula) {
+                return '';
+            }
+
+            let expression = formula;
+
+            schema.forEach(function (field) {
+                let key = field.key;
+
+                let value = getFormNumericValue(key);
+
+                let regex = new RegExp('\\b' + key + '\\b', 'g');
+
+                expression = expression.replace(regex, value);
+            });
+
+            /*
+             * Разрешаем только цифры, точки, пробелы и математические операторы.
+             * Это защита от выполнения произвольного JS.
+             */
+            if (!/^[0-9+\-*/().\s]+$/.test(expression)) {
+                return '';
+            }
+
+            try {
+                let result = Function('"use strict"; return (' + expression + ')')();
+
+                if (!isFinite(result)) {
+                    return '';
+                }
+
+                return Math.round(result * 1000000) / 1000000;
+            } catch (e) {
+                return '';
+            }
+        }
+
+        function recalculateCalcFields() {
+            schema.forEach(function (field) {
+                if (field.type !== 'calc') {
+                    return;
+                }
+
+                let result = safeCalculateFormula(field.formula || '');
+
+                $(`.journal-field[data-key="${field.key}"]`).val(result);
+            });
+        }
+        $(document).on('input change', '.journal-field', function () {
+            recalculateCalcFields();
+        });
     </script>
 @endpush

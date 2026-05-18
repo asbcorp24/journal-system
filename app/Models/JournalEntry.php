@@ -44,11 +44,28 @@ class JournalEntry extends Model
 
     public function comments()
     {
-        return $this->hasMany(JournalEntryComment::class);
+        return $this->hasMany(JournalEntryComment::class, 'journal_entry_id');
     }
+
+    public function rootComments()
+    {
+        return $this->hasMany(JournalEntryComment::class, 'journal_entry_id')
+            ->whereNull('parent_id')
+            ->with(['user', 'editor', 'replies'])
+            ->orderBy('created_at');
+    }
+
     public function lastComment()
     {
         return $this->hasOne(JournalEntryComment::class, 'journal_entry_id')
             ->latestOfMany();
     }
+
+    public function logs()
+    {
+        return $this->hasMany(JournalEntryLog::class, 'journal_entry_id')
+            ->with('user')
+            ->orderByDesc('id');
+    }
+
 }

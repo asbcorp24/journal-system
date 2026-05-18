@@ -382,7 +382,13 @@
                 required: data?.required || false,
                 directory_id: data?.directory_id || '',
                 options: data?.options || [],
-                formula: data?.formula || ''
+                formula: data?.formula || '',
+                validation: data?.validation || {
+                    min: '',
+                    max: '',
+                    greater_than_field: '',
+                    less_than_field: ''
+                }
             });
 
             renderFields();
@@ -426,6 +432,12 @@
                 field.required = $(`${prefix} .field-required`).is(':checked');
                 field.directory_id = $(`${prefix} .field-directory`).val();
                 field.formula = $(`${prefix} .field-formula`).val();
+                field.validation = {
+                    min: $(`${prefix} .field-validation-min`).val(),
+                    max: $(`${prefix} .field-validation-max`).val(),
+                    greater_than_field: $(`${prefix} .field-validation-greater`).val(),
+                    less_than_field: $(`${prefix} .field-validation-less`).val()
+                };
 
                 let optionsText = $(`${prefix} .field-options`).val() || '';
 
@@ -553,16 +565,97 @@
                                           placeholder="Каждый вариант с новой строки">${escapeHtml(optionsText)}</textarea>
                             </div>
 
-                            <div class="col-md-6 field-formula-block ${field.type === 'calc' ? '' : 'd-none'}">
-                                <label class="form-label">Формула</label>
-                                <input type="text"
-                                       class="form-control field-formula"
-                                       value="${escapeHtml(field.formula)}"
-                                       placeholder="count * price">
-                                <div class="text-secondary small">
-                                    Пока сохраняется как текст. Расчёт добавим позже.
-                                </div>
-                            </div>
+                           <div class="col-md-6 field-formula-block ${field.type === 'calc' ? '' : 'd-none'}">
+    <label class="form-label">Формула</label>
+
+    <input type="text"
+           class="form-control field-formula"
+           value="${escapeHtml(field.formula)}"
+         placeholder="Например: count * price">
+
+    <div class="text-secondary small mt-1">
+        Используйте ключи других числовых полей и математические операторы:
+        <code>+</code>, <code>-</code>, <code>*</code>, <code>/</code>, <code>()</code>.
+    </div>
+
+    <div class="alert alert-info mt-2 mb-0 py-2 small">
+        <div class="fw-bold mb-1">Примеры формул:</div>
+
+        <div>
+            <code>count * price</code>
+            — количество × цена
+        </div>
+
+        <div>
+            <code>good_count + defect_count</code>
+            — сумма двух полей
+        </div>
+
+        <div>
+            <code>(length * width) / 1000</code>
+            — расчёт с группировкой
+        </div>
+
+        <div>
+            <code>total / hours</code>
+            — деление одного поля на другое
+        </div>
+    </div>
+
+    <div class="text-warning small mt-2">
+        Важно: в формуле нужно использовать именно <b>ключи полей</b>, например
+        <code>count</code>, <code>price</code>, <code>hours</code>, а не русские названия.
+    </div>
+</div>
+<div class="col-md-12 field-validation-block ${['number', 'calc'].includes(field.type) ? '' : 'd-none'}">
+    <div class="card mt-2">
+        <div class="card-body">
+            <div class="fw-bold mb-2">
+                Ограничения значения
+            </div>
+
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <label class="form-label">Не меньше числа</label>
+                    <input type="number"
+                           step="any"
+                           class="form-control field-validation-min"
+                           value="${escapeHtml(field.validation?.min || '')}"
+                           placeholder="например 0">
+                </div>
+
+                <div class="col-md-3">
+                    <label class="form-label">Не больше числа</label>
+                    <input type="number"
+                           step="any"
+                           class="form-control field-validation-max"
+                           value="${escapeHtml(field.validation?.max || '')}"
+                           placeholder="например 100">
+                </div>
+
+                <div class="col-md-3">
+                    <label class="form-label">Больше другого поля</label>
+                    <select class="form-select field-validation-greater">
+                        <option value="">Не задано</option>
+                        ${fieldKeyOptions(field.validation?.greater_than_field || '', field.uid)}
+                    </select>
+                </div>
+
+                <div class="col-md-3">
+                    <label class="form-label">Меньше другого поля</label>
+                    <select class="form-select field-validation-less">
+                        <option value="">Не задано</option>
+                        ${fieldKeyOptions(field.validation?.less_than_field || '', field.uid)}
+                    </select>
+                </div>
+            </div>
+
+            <div class="text-secondary small mt-2">
+                Сравнение с другим полем работает только если другое поле тоже числовое.
+            </div>
+        </div>
+    </div>
+</div>
                         </div>
                     </div>
                 </div>
@@ -574,32 +667,77 @@
         }
 
         function buildSchemaForSubmit() {
-            readFieldsFromDom();
+            let schema = [];
 
-            return fields.map(function (field) {
+            $('.field-card').each(function () {
+                let card = $(this);
+
+                let key = card.find('.field-key').val();
+                let label = card.find('.field-label').val();
+                let type = card.find('.field-type').val();
+
                 let item = {
-                    key: field.key,
-                    label: field.label,
-                    type: field.type,
-                    required: field.required ? 1 : 0
+                    key: key,
+                    label: label,
+                    type: type,
+                    required: card.find('.field-required').is(':checked') ? 1 : 0
                 };
 
-                if (field.type === 'directory' || field.type === 'directory_text') {
-                    item.directory_id = field.directory_id;
+                if (type === 'directory' || type === 'directory_text') {
+                    item.directory_id = card.find('.field-directory').val();
                 }
 
-                if (field.type === 'list') {
-                    item.options = field.options || [];
+                if (type === 'list') {
+                    let optionsText = card.find('.field-options').val() || '';
+
+                    item.options = optionsText
+                        .split('\n')
+                        .map(function (item) {
+                            return item.trim();
+                        })
+                        .filter(function (item) {
+                            return item.length > 0;
+                        });
                 }
 
-                if (field.type === 'calc') {
-                    item.formula = field.formula || '';
+                if (type === 'calc') {
+                    item.formula = card.find('.field-formula').val() || '';
                 }
 
-                return item;
+                if (type === 'number' || type === 'calc') {
+                    let validation = {};
+
+                    let min = card.find('.field-validation-min').val();
+                    let max = card.find('.field-validation-max').val();
+                    let greater = card.find('.field-validation-greater').val();
+                    let less = card.find('.field-validation-less').val();
+
+                    if (min !== undefined && min !== '') {
+                        validation.min = min;
+                    }
+
+                    if (max !== undefined && max !== '') {
+                        validation.max = max;
+                    }
+
+                    if (greater !== undefined && greater !== '') {
+                        validation.greater_than_field = greater;
+                    }
+
+                    if (less !== undefined && less !== '') {
+                        validation.less_than_field = less;
+                    }
+
+                    if (Object.keys(validation).length > 0) {
+                        item.validation = validation;
+                    }
+                }
+
+                schema.push(item);
             });
-        }
 
+            return schema;
+        }
         function updateSchemaPreview() {
             let schema = buildSchemaForSubmit();
 
@@ -639,7 +777,12 @@
             renderFields();
         });
 
-        $(document).on('input change', '.field-key, .field-label, .field-required, .field-directory, .field-options, .field-formula', function () {
+        $(document).on('change blur', '.field-key', function () {
+            readFieldsFromDom();
+            renderFields();
+        });
+
+        $(document).on('input change', '.field-label, .field-required, .field-directory, .field-options, .field-formula, .field-validation-min, .field-validation-max, .field-validation-greater, .field-validation-less', function () {
             updateSchemaPreview();
         });
 
@@ -660,7 +803,7 @@
                 division_ids: $('#templateDivisions').val() || [],
                 schema: buildSchemaForSubmit()
             };
-
+            console.log('SCHEMA TO SAVE:', payload.schema);
             $.ajax({
                 url: url,
                 method: "POST",
@@ -760,7 +903,33 @@
                 loadTemplates(page);
             }
         });
+        function fieldKeyOptions(selectedKey = '', currentUid = null) {
+            let html = '';
 
+            fields.forEach(function (field) {
+                if (currentUid && field.uid === currentUid) {
+                    return;
+                }
+
+                if (!['number', 'calc'].includes(field.type)) {
+                    return;
+                }
+
+                if (!field.key) {
+                    return;
+                }
+
+                let selected = String(selectedKey) === String(field.key) ? 'selected' : '';
+
+                html += `
+            <option value="${escapeHtml(field.key)}" ${selected}>
+                ${escapeHtml(field.label || field.key)}
+            </option>
+        `;
+            });
+
+            return html;
+        }
         loadTemplates();
     </script>
 @endpush

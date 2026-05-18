@@ -10,6 +10,9 @@ use App\Http\Controllers\Auth\UserAuthController;
 use App\Http\Controllers\User\DashboardController;
 use App\Http\Controllers\User\JournalController;
 use App\Http\Controllers\User\ReportController;
+use App\Http\Controllers\User\ReviewController;
+use App\Http\Controllers\User\NotificationController;
+use App\Http\Controllers\User\ChartController;
 Route::get('/', function () {
     if (session('user_id')) {
         return redirect()->route('user.dashboard');
@@ -60,6 +63,60 @@ Route::middleware('user.auth')->group(function () {
 
     Route::post('/reports/{report}/export', [ReportController::class, 'export'])
         ->name('user.reports.export');
+    Route::get('/journals/{journal}/print', [JournalController::class, 'print'])
+        ->name('user.journals.print');
+
+
+    Route::get('/journals/{journal}/entries/{entry}/comments', [JournalController::class, 'comments'])
+        ->name('user.journals.entries.comments');
+
+    Route::post('/journals/{journal}/entries/{entry}/comments', [JournalController::class, 'storeComment'])
+        ->name('user.journals.entries.comments.store');
+
+    Route::post('/journals/{journal}/entries/{entry}/comments/{comment}', [JournalController::class, 'updateComment'])
+        ->name('user.journals.entries.comments.update');
+
+    Route::get('/journals/{journal}/entries/{entry}/logs', [JournalController::class, 'logs'])
+        ->name('user.journals.entries.logs');
+
+    Route::get('/notifications', [NotificationController::class, 'index'])
+        ->name('user.notifications.index');
+
+    Route::get('/notifications/list', [NotificationController::class, 'list'])
+        ->name('user.notifications.list');
+
+    Route::get('/notifications/unread-count', [NotificationController::class, 'unreadCount'])
+        ->name('user.notifications.unread-count');
+
+    Route::post('/notifications/{notification}/read', [NotificationController::class, 'markRead'])
+        ->name('user.notifications.read');
+
+    Route::post('/notifications/read-all', [NotificationController::class, 'markAllRead'])
+        ->name('user.notifications.read-all');
+
+    Route::get('/notifications/{notification}/open', [NotificationController::class, 'open'])
+        ->name('user.notifications.open');
+
+    Route::get('/review', [ReviewController::class, 'index'])
+        ->name('user.review.index');
+
+    Route::get('/review/list', [ReviewController::class, 'list'])
+        ->name('user.review.list');
+
+    Route::get('/review/entries/{entry}', [ReviewController::class, 'showEntry'])
+        ->name('user.review.entries.show');
+
+    Route::post('/review/entries/{entry}/approve', [ReviewController::class, 'approve'])
+        ->name('user.review.entries.approve');
+
+    Route::post('/review/entries/{entry}/reject', [ReviewController::class, 'reject'])
+        ->name('user.review.entries.reject');
+    Route::get('/charts', [ChartController::class, 'index'])
+        ->name('user.charts.index');
+
+    Route::get('/charts/data', [ChartController::class, 'data'])
+        ->name('user.charts.data');
+
 });
 
 

@@ -184,6 +184,17 @@
     </a>
 
     <div class="ms-auto d-flex align-items-center gap-3">
+
+
+        <a href="{{ route('user.notifications.index') }}"
+           class="btn btn-outline-light btn-sm position-relative">
+            <i class="bi bi-bell"></i>
+
+            <span id="notificationsBadge"
+                  class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger d-none">
+        0
+    </span>
+        </a>
         <div class="user-badge d-none d-md-block">
             {{ session('user_name') }}
             <span class="text-secondary">
@@ -210,13 +221,23 @@
                 <i class="bi bi-clock-history"></i>
                 Мои записи
             </a>
-
+            <a href="{{ route('user.charts.index') }}"
+               class="{{ request()->routeIs('user.charts.*') ? 'active' : '' }}">
+                <i class="bi bi-graph-up"></i>
+                Графики
+            </a>
             @if(session('user_role') === 'foreman' || session('user_role') === 'admin')
-                <a href="#">
+                <a href="{{ route('user.review.index') }}"
+                   class="{{ request()->routeIs('user.review.*') ? 'active' : '' }}">
                     <i class="bi bi-check2-square"></i>
-                    Проверка записей
+                    На проверку
                 </a>
             @endif
+            <a href="{{ route('user.notifications.index') }}"
+               class="{{ request()->routeIs('user.notifications.*') ? 'active' : '' }}">
+                <i class="bi bi-bell"></i>
+                Уведомления
+            </a>
             @if(session('user_role') === 'admin')
                 <a href="{{ route('user.reports.index') }}"
                    class="{{ request()->routeIs('user.reports.*') ? 'active' : '' }}">
@@ -272,6 +293,11 @@
                 Проверка записей
             </a>
         @endif
+        <a href="{{ route('user.notifications.index') }}"
+           class="{{ request()->routeIs('user.notifications.*') ? 'active' : '' }}">
+            <i class="bi bi-bell"></i>
+            Уведомления
+        </a>
 
         @if(session('user_role') === 'admin')
             <a href="{{ route('user.reports.index') }}"
@@ -282,7 +308,15 @@
         @endif
 
         <hr class="border-secondary">
+        <a href="{{ route('user.notifications.index') }}"
+           class="btn btn-outline-light btn-sm position-relative">
+            <i class="bi bi-bell"></i>
 
+            <span id="notificationsBadge"
+                  class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger d-none">
+        0
+    </span>
+        </a>
         <a href="{{ route('user.logout') }}">
             <i class="bi bi-box-arrow-right"></i>
             Выйти
@@ -367,8 +401,33 @@
 
         return $('<div>').text(text).html();
     }
-</script>
 
+</script>
+<script>
+    function loadNotificationsCount() {
+        $.ajax({
+            url: "{{ route('user.notifications.unread-count') }}",
+            method: "GET",
+            success: function (response) {
+                let count = response.count || 0;
+
+                if (count > 0) {
+                    $('#notificationsBadge')
+                        .removeClass('d-none')
+                        .text(count > 99 ? '99+' : count);
+                } else {
+                    $('#notificationsBadge')
+                        .addClass('d-none')
+                        .text('0');
+                }
+            }
+        });
+    }
+
+    loadNotificationsCount();
+
+    setInterval(loadNotificationsCount, 30000);
+</script>
 @stack('scripts')
 
 </body>

@@ -201,6 +201,31 @@ class JournalTemplateController extends Controller
                 'string',
                 'max:1000',
             ],
+            'schema.*.validation' => [
+                'nullable',
+                'array',
+            ],
+            'schema.*.validation.min' => [
+                'nullable',
+                'numeric',
+            ],
+            'schema.*.validation.max' => [
+                'nullable',
+                'numeric',
+            ],
+            'schema.*.validation.greater_than_field' => [
+                'nullable',
+                'string',
+                'max:100',
+                'regex:/^[a-zA-Z0-9_]+$/',
+            ],
+            'schema.*.validation.less_than_field' => [
+                'nullable',
+                'string',
+                'max:100',
+                'regex:/^[a-zA-Z0-9_]+$/',
+            ],
+
             'division_ids' => [
                 'nullable',
                 'array',
@@ -224,7 +249,23 @@ class JournalTemplateController extends Controller
                 'message' => 'Ключи полей не должны повторяться',
             ], 422));
         }
+        foreach ($validated['schema'] as $field) {
+            $validation = $field['validation'] ?? [];
 
+            if (!empty($validation['greater_than_field']) && !in_array($validation['greater_than_field'], $keys)) {
+                abort(response()->json([
+                    'success' => false,
+                    'message' => "В ограничении поля «{$field['label']}» указано несуществующее поле: {$validation['greater_than_field']}",
+                ], 422));
+            }
+
+            if (!empty($validation['less_than_field']) && !in_array($validation['less_than_field'], $keys)) {
+                abort(response()->json([
+                    'success' => false,
+                    'message' => "В ограничении поля «{$field['label']}» указано несуществующее поле: {$validation['less_than_field']}",
+                ], 422));
+            }
+        }
         $schema = [];
 
         foreach ($validated['schema'] as $field) {
@@ -234,7 +275,31 @@ class JournalTemplateController extends Controller
                 'type' => $field['type'],
                 'required' => !empty($field['required']),
             ];
+            if (in_array($field['type'], ['number', 'calc'])) {
+                $validation = $field['validation'] ?? [];
 
+                $cleanValidation = [];
+
+                if (isset($validation['min']) && $validation['min'] !== '') {
+                    $cleanValidation['min'] = $validation['min'] + 0;
+                }
+
+                if (isset($validation['max']) && $validation['max'] !== '') {
+                    $cleanValidation['max'] = $validation['max'] + 0;
+                }
+
+                if (!empty($validation['greater_than_field'])) {
+                    $cleanValidation['greater_than_field'] = $validation['greater_than_field'];
+                }
+
+                if (!empty($validation['less_than_field'])) {
+                    $cleanValidation['less_than_field'] = $validation['less_than_field'];
+                }
+
+                if (!empty($cleanValidation)) {
+                    $item['validation'] = $cleanValidation;
+                }
+            }
             if (in_array($field['type'], ['directory', 'directory_text'])) {
                 if (empty($field['directory_id'])) {
                     abort(response()->json([
