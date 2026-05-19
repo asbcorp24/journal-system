@@ -5,6 +5,7 @@
             <th>ID</th>
             <th>ФИО</th>
             <th>Email</th>
+            <th>Пароль</th>
             <th>Роль</th>
             <th>Подразделение</th>
             <th>Статус</th>
@@ -20,7 +21,19 @@
                 <td>{{ $user->name }}</td>
 
                 <td>{{ $user->email }}</td>
+                <td>
+                    <div class="input-group input-group-sm" style="min-width: 180px;">
+                        <input type="password"
+                               class="form-control form-control-sm bg-dark text-light border-secondary user-password-view"
+                               value="{{ $user->decrypted_password }}"
+                               readonly>
 
+                        <button class="btn btn-outline-light btn-sm toggle-password"
+                                type="button">
+                            <i class="bi bi-eye"></i>
+                        </button>
+                    </div>
+                </td>
                 <td>
                     @if($user->role === 'admin')
                         <span class="badge bg-primary badge-role">Admin</span>
@@ -55,7 +68,7 @@
             </tr>
         @empty
             <tr>
-                <td colspan="7" class="text-center text-secondary py-4">
+                <td colspan="8" class="text-center text-secondary py-4">
                     Пользователи не найдены
                 </td>
             </tr>

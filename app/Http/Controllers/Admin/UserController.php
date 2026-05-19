@@ -41,7 +41,10 @@ class UserController extends Controller
         }
 
         $users = $query->paginate(10);
-
+        $users->getCollection()->transform(function ($user) {
+            $user->decrypted_password = UserPasswordCipher::decryptPassword($user->password);
+            return $user;
+        });
         return response()->json([
             'success' => true,
             'html' => view('admin.users.partials.table', compact('users'))->render(),
@@ -87,6 +90,7 @@ class UserController extends Controller
                 'role' => $user->role,
                 'division_id' => $user->division_id,
                 'is_active' => $user->is_active,
+                'decrypted_password' => UserPasswordCipher::decryptPassword($user->password),
             ],
         ]);
     }
