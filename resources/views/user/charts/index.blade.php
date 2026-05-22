@@ -75,7 +75,7 @@
 @endsection
 
 @push('scripts')
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="{{ asset('vendor/jquery/chart.js') }}"></script>
 
     <script>
         let chartInstances = {};
