@@ -76,6 +76,9 @@ Route::middleware('user.auth')->group(function () {
     Route::post('/journals/{journal}/entries/{entry}/comments/{comment}', [JournalController::class, 'updateComment'])
         ->name('user.journals.entries.comments.update');
 
+    Route::post('/journals/{journal}/directories/{directory}/values', [JournalController::class, 'storeDirectoryValue'])
+        ->name('user.journals.directories.values.store');
+
     Route::get('/journals/{journal}/entries/{entry}/logs', [JournalController::class, 'logs'])
         ->name('user.journals.entries.logs');
 

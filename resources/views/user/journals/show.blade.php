@@ -173,6 +173,43 @@
             </form>
         </div>
     </div>
+    <div class="modal fade" id="directoryValueModal" tabindex="-1">
+        <div class="modal-dialog">
+            <form class="modal-content" id="directoryValueForm">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="directoryValueModalTitle">Add value</h5>
+
+                    <button type="button"
+                            class="btn-close btn-close-white"
+                            data-bs-dismiss="modal"></button>
+                </div>
+
+                <div class="modal-body">
+                    <input type="hidden" id="directoryValueFieldKey">
+                    <input type="hidden" id="directoryValueDirectoryId">
+
+                    <label class="form-label" for="directoryValueInput">Value</label>
+                    <input type="text"
+                           class="form-control"
+                           id="directoryValueInput"
+                           maxlength="255"
+                           required>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button"
+                            class="btn btn-outline-light"
+                            data-bs-dismiss="modal">
+                        Cancel
+                    </button>
+
+                    <button type="submit" class="btn btn-primary">
+                        Save
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
     <div class="modal fade" id="commentsModal" tabindex="-1">
         <div class="modal-dialog modal-lg modal-dialog-scrollable">
             <div class="modal-content">
@@ -252,8 +289,10 @@
         const schema = @json($schema);
         const directoryValues = @json($directoryValues);
         const userRole = "{{ session('user_role') }}";
+        const canManageDirectoryValues = userRole !== 'worker';
 
         let entryModal = new bootstrap.Modal(document.getElementById('entryModal'));
+        let directoryValueModal = new bootstrap.Modal(document.getElementById('directoryValueModal'));
         let currentPage = 1;
 
         function statusBadge(status) {
@@ -285,6 +324,33 @@
             });
 
             return item ? item.value : valueId;
+        }
+
+        function upsertDirectoryValue(directoryId, item) {
+            if (!directoryValues[directoryId]) {
+                directoryValues[directoryId] = [];
+            }
+
+            let index = directoryValues[directoryId].findIndex(function (existingItem) {
+                return String(existingItem.id) === String(item.id);
+            });
+
+            if (index === -1) {
+                directoryValues[directoryId].push(item);
+            } else {
+                directoryValues[directoryId][index] = item;
+            }
+
+            directoryValues[directoryId].sort(function (a, b) {
+                let sortA = Number(a.sort_order || 0);
+                let sortB = Number(b.sort_order || 0);
+
+                if (sortA !== sortB) {
+                    return sortA - sortB;
+                }
+
+                return String(a.value || '').localeCompare(String(b.value || ''));
+            });
         }
 
         function formatValue(field, value) {
@@ -583,6 +649,7 @@
                 }
 
                 else if (field.type === 'directory' || field.type === 'directory_text') {
+                    html += `<div class="input-group">`;
                     html += `
                     <select class="form-select journal-field"
                             data-key="${field.key}"
@@ -609,6 +676,21 @@
                     });
 
                     html += `</select>`;
+
+                    if (canManageDirectoryValues) {
+                        html += `
+                        <button type="button"
+                                class="btn btn-outline-secondary add-directory-value-btn"
+                                data-field-key="${field.key}"
+                                data-directory-id="${field.directory_id}"
+                                data-field-label="${escapeHtml(field.label)}"
+                                title="Add value">
+                            <i class="bi bi-plus-lg"></i>
+                        </button>
+                    `;
+                    }
+
+                    html += `</div>`;
                 }
 
                 else if (field.type === 'calc') {
@@ -746,6 +828,68 @@
                 success: function (response) {
                     showToast(response.message, 'success');
                     loadEntries(currentPage);
+                },
+                error: function (xhr) {
+                    showAjaxErrors(xhr);
+                }
+            });
+        });
+
+        $(document).on('click', '.add-directory-value-btn', function () {
+            $('#directoryValueFieldKey').val($(this).data('field-key'));
+            $('#directoryValueDirectoryId').val($(this).data('directory-id'));
+            $('#directoryValueInput').val('');
+
+            let fieldLabel = $(this).data('field-label') || 'field';
+            $('#directoryValueModalTitle').text(`Add value: ${fieldLabel}`);
+
+            directoryValueModal.show();
+        });
+
+        $('#directoryValueForm').on('submit', function (e) {
+            e.preventDefault();
+
+            let fieldKey = $('#directoryValueFieldKey').val();
+            let directoryId = $('#directoryValueDirectoryId').val();
+            let value = $('#directoryValueInput').val().trim();
+
+            if (!fieldKey || !directoryId) {
+                showToast('Directory is not selected', 'danger');
+                return;
+            }
+
+            if (!value) {
+                showToast('Enter value', 'warning');
+                return;
+            }
+
+            $.ajax({
+                url: `/journals/${journalId}/directories/${directoryId}/values`,
+                method: "POST",
+                data: {
+                    value: value
+                },
+                success: function (response) {
+                    upsertDirectoryValue(directoryId, response.value);
+
+                    let select = $(`.journal-field[data-key="${fieldKey}"]`);
+
+                    if (select.length) {
+                        if (select.find(`option[value="${response.value.id}"]`).length === 0) {
+                            select.append(`
+                                <option value="${response.value.id}">
+                                    ${escapeHtml(response.value.value)}
+                                </option>
+                            `);
+                        } else {
+                            select.find(`option[value="${response.value.id}"]`).text(response.value.value);
+                        }
+
+                        select.val(String(response.value.id)).trigger('change');
+                    }
+
+                    showToast(response.message, 'success');
+                    directoryValueModal.hide();
                 },
                 error: function (xhr) {
                     showAjaxErrors(xhr);

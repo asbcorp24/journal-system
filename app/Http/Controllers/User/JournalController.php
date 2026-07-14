@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\User;
 
 use App\Http\Controllers\Controller;
+use App\Models\Directory;
 use App\Models\DirectoryValue;
 use App\Models\Division;
 use App\Models\JournalEntry;
@@ -524,6 +525,46 @@ class JournalController extends Controller
             'message' => 'Запись удалена',
         ]);
     }
+    public function storeDirectoryValue(Request $request, JournalTemplate $journal, Directory $directory)
+    {
+        $this->checkJournalAccess($journal);
+        $this->checkCanManageDirectoryValues($journal, $directory);
+
+        $validated = $request->validate([
+            'value' => [
+                'required',
+                'string',
+                'max:255',
+            ],
+        ]);
+
+        $value = trim($validated['value']);
+
+        $existingValue = DirectoryValue::query()
+            ->where('directory_id', $directory->id)
+            ->whereRaw('LOWER(value) = ?', [mb_strtolower($value)])
+            ->first();
+
+        if ($existingValue) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Р—РЅР°С‡РµРЅРёРµ СѓР¶Рµ СЃСѓС‰РµСЃС‚РІСѓРµС‚',
+                'value' => $existingValue,
+            ]);
+        }
+
+        $newValue = $directory->values()->create([
+            'value' => $value,
+            'sort_order' => 0,
+            'is_active' => true,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Р—РЅР°С‡РµРЅРёРµ РґРѕР±Р°РІР»РµРЅРѕ',
+            'value' => $newValue,
+        ]);
+    }
     public function logs(JournalTemplate $journal, JournalEntry $entry)
     {
         $this->checkJournalAccess($journal);
@@ -565,6 +606,44 @@ class JournalController extends Controller
     {
         if ((int)$entry->journal_template_id !== (int)$journal->id) {
             abort(404);
+        }
+    }
+
+    private function checkCanManageDirectoryValues(JournalTemplate $journal, Directory $directory): void
+    {
+        $role = session('user_role');
+
+        if ($role === 'worker') {
+            abort(403, 'РќРµС‚ РґРѕСЃС‚СѓРїР°');
+        }
+
+        $directoryIds = collect($journal->schema ?? [])
+            ->filter(function ($field) {
+                return in_array($field['type'] ?? '', ['directory', 'directory_text'], true)
+                    && !empty($field['directory_id']);
+            })
+            ->pluck('directory_id')
+            ->map(function ($id) {
+                return (int)$id;
+            })
+            ->unique()
+            ->values();
+
+        if (!$directoryIds->contains((int)$directory->id)) {
+            abort(403, 'РќРµС‚ РґРѕСЃС‚СѓРїР° Рє СЌС‚РѕРјСѓ СЃРїСЂР°РІРѕС‡РЅРёРєСѓ');
+        }
+
+        if ($role === 'admin') {
+            return;
+        }
+
+        $divisionId = session('user_division_id');
+
+        $hasDivisionAccess = !$directory->divisions()->exists()
+            || $directory->divisions()->where('divisions.id', $divisionId)->exists();
+
+        if (!$hasDivisionAccess) {
+            abort(403, 'РќРµС‚ РґРѕСЃС‚СѓРїР° Рє СЌС‚РѕРјСѓ СЃРїСЂР°РІРѕС‡РЅРёРєСѓ');
         }
     }
 
