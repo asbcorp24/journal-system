@@ -2,9 +2,12 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class JournalEntry extends Model
 {
+    use SoftDeletes;
+
     protected $fillable = [
         'journal_template_id',
         'division_id',
@@ -14,6 +17,7 @@ class JournalEntry extends Model
         'status',
         'checked_by',
         'checked_at',
+        'deleted_at',
     ];
 
     protected $casts = [

@@ -4,7 +4,9 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Division;
+use App\Models\JournalTemplate;
 use App\Models\User;
+use App\Models\UserJournalPermission;
 use App\Services\UserPasswordCipher;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -14,8 +16,20 @@ class UserController extends Controller
     public function index()
     {
         $divisions = Division::orderBy('name')->get();
+        $journals = JournalTemplate::query()
+            ->with('divisions')
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get();
+        $journalOptions = $journals->map(function (JournalTemplate $journal) {
+            return [
+                'id' => $journal->id,
+                'name' => $journal->name,
+                'division_ids' => $journal->divisions->pluck('id')->values()->all(),
+            ];
+        })->values()->all();
 
-        return view('admin.users.index', compact('divisions'));
+        return view('admin.users.index', compact('divisions', 'journals', 'journalOptions'));
     }
 
     public function list(Request $request)
@@ -45,6 +59,7 @@ class UserController extends Controller
             $user->decrypted_password = UserPasswordCipher::decryptPassword($user->password);
             return $user;
         });
+
         return response()->json([
             'success' => true,
             'html' => view('admin.users.partials.table', compact('users'))->render(),
@@ -139,6 +154,91 @@ class UserController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Пользователь удалён',
+        ]);
+    }
+
+    public function permissions(User $user)
+    {
+        $permissions = $user->journalPermissions()
+            ->with(['division', 'journalTemplate'])
+            ->orderBy('division_id')
+            ->orderBy('journal_template_id')
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'permissions' => $permissions,
+        ]);
+    }
+
+    public function storePermission(Request $request, User $user)
+    {
+        $validated = $request->validate([
+            'division_id' => ['required', 'exists:divisions,id'],
+            'scope' => ['required', Rule::in(['division', 'journal'])],
+            'journal_template_id' => ['nullable', 'exists:journal_templates,id'],
+            'access_level' => ['required', Rule::in([
+                UserJournalPermission::ACCESS_VIEW,
+                UserJournalPermission::ACCESS_FULL,
+            ])],
+        ]);
+
+        $journalTemplateId = $validated['scope'] === 'journal'
+            ? (int) ($validated['journal_template_id'] ?? 0)
+            : null;
+
+        if ($validated['scope'] === 'journal' && !$journalTemplateId) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Выберите конкретный журнал.',
+            ], 422);
+        }
+
+        if ($journalTemplateId) {
+            $isAttached = JournalTemplate::query()
+                ->whereKey($journalTemplateId)
+                ->whereHas('divisions', function ($query) use ($validated) {
+                    $query->where('divisions.id', $validated['division_id']);
+                })
+                ->exists();
+
+            if (!$isAttached) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Выбранный журнал не привязан к указанному подразделению.',
+                ], 422);
+            }
+        }
+
+        $permission = UserJournalPermission::query()->updateOrCreate(
+            [
+                'user_id' => $user->id,
+                'division_id' => $validated['division_id'],
+                'journal_template_id' => $journalTemplateId,
+            ],
+            [
+                'access_level' => $validated['access_level'],
+            ]
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Доступ к журналам сохранён.',
+            'permission' => $permission->load(['division', 'journalTemplate']),
+        ]);
+    }
+
+    public function destroyPermission(User $user, UserJournalPermission $permission)
+    {
+        if ((int) $permission->user_id !== (int) $user->id) {
+            abort(404);
+        }
+
+        $permission->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Доступ удалён.',
         ]);
     }
 }

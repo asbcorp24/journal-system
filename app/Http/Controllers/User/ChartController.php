@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Division;
 use App\Models\JournalEntry;
 use App\Models\JournalTemplate;
+use App\Support\DivisionTree;
 use Illuminate\Http\Request;
 
 class ChartController extends Controller
@@ -13,16 +14,17 @@ class ChartController extends Controller
     public function index()
     {
         $divisionId = session('user_division_id');
+        $managedDivisionIds = DivisionTree::managedDivisionIds($divisionId, session('user_role'));
 
         $journals = JournalTemplate::query()
             ->where('is_active', true)
-            ->whereHas('divisions', function ($q) use ($divisionId) {
-                $q->where('divisions.id', $divisionId);
+            ->whereHas('divisions', function ($q) use ($managedDivisionIds) {
+                $q->whereIn('divisions.id', $managedDivisionIds);
             })
             ->orderBy('name')
             ->get();
 
-        $divisions = Division::orderBy('name')->get();
+        $divisions = Division::whereIn('id', $managedDivisionIds)->orderBy('name')->get();
 
         return view('user.charts.index', compact('journals', 'divisions'));
     }
@@ -32,11 +34,12 @@ class ChartController extends Controller
         $role = session('user_role');
         $divisionId = session('user_division_id');
         $userId = session('user_id');
+        $managedDivisionIds = DivisionTree::managedDivisionIds($divisionId, $role);
 
         $journals = JournalTemplate::query()
             ->where('is_active', true)
-            ->whereHas('divisions', function ($q) use ($divisionId) {
-                $q->where('divisions.id', $divisionId);
+            ->whereHas('divisions', function ($q) use ($managedDivisionIds) {
+                $q->whereIn('divisions.id', $managedDivisionIds);
             })
             ->orderBy('name')
             ->get();
@@ -79,10 +82,10 @@ class ChartController extends Controller
             }
 
             if ($role === 'admin') {
-                if ($request->filled('division_id')) {
+                if ($request->filled('division_id') && in_array((int) $request->division_id, $managedDivisionIds, true)) {
                     $query->where('division_id', $request->division_id);
                 } else {
-                    $query->where('division_id', $divisionId);
+                    $query->whereIn('division_id', $managedDivisionIds);
                 }
             }
 

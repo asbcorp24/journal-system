@@ -10,6 +10,7 @@ use App\Models\JournalTemplate;
 use App\Models\JournalEntryComment;
 use App\Models\Notification;
 use App\Models\JournalEntryLog;
+use App\Support\DivisionTree;
 use Illuminate\Http\Request;
 
 class ReviewController extends Controller
@@ -20,7 +21,10 @@ class ReviewController extends Controller
             abort(403, 'Страница проверки доступна только мастеру и администратору');
         }
 
-        $divisions = Division::orderBy('name')->get();
+        $divisions = Division::whereIn(
+            'id',
+            DivisionTree::managedDivisionIds(session('user_division_id'), session('user_role'))
+        )->orderBy('name')->get();
 
         return view('user.review.index', compact('divisions'));
     }
@@ -33,6 +37,7 @@ class ReviewController extends Controller
 
         $role = session('user_role');
         $divisionId = session('user_division_id');
+        $managedDivisionIds = DivisionTree::managedDivisionIds($divisionId, $role);
 
         $query = JournalEntry::with([
             'template',
@@ -48,10 +53,10 @@ class ReviewController extends Controller
         }
 
         if ($role === 'admin') {
-            if ($request->filled('division_id')) {
+            if ($request->filled('division_id') && in_array((int) $request->division_id, $managedDivisionIds, true)) {
                 $query->where('division_id', $request->division_id);
             } else {
-                $query->where('division_id', $divisionId);
+                $query->whereIn('division_id', $managedDivisionIds);
             }
         }
 
@@ -247,6 +252,11 @@ class ReviewController extends Controller
         }
 
         if ($role === 'admin') {
+            abort_unless(
+                in_array((int) $entry->division_id, DivisionTree::managedDivisionIds($divisionId, $role), true),
+                403,
+                'РќРµС‚ РґРѕСЃС‚СѓРїР°'
+            );
             return;
         }
 

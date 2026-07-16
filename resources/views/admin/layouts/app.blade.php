@@ -100,6 +100,40 @@
             background: #2563eb;
             border-color: #2563eb;
         }
+
+        .searchable-select-box {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .searchable-select-input-wrap {
+            position: relative;
+        }
+
+        .searchable-select-icon {
+            position: absolute;
+            left: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #94a3b8;
+            pointer-events: none;
+            font-size: 14px;
+        }
+
+        .searchable-select-input {
+            background-color: #020617;
+            color: #e5e7eb;
+            border: 1px solid #334155;
+            border-radius: .375rem;
+            padding: .375rem .75rem .375rem 2rem;
+        }
+
+        .searchable-select-input:focus {
+            outline: none;
+            border-color: #38bdf8;
+            box-shadow: 0 0 0 .2rem rgba(56, 189, 248, .2);
+        }
     </style>
 
     @stack('styles')
@@ -151,6 +185,16 @@
                class="{{ request()->routeIs('admin.reports.*') ? 'active' : '' }}">
                 <i class="bi bi-file-earmark-spreadsheet"></i>
                 Отчёты
+            </a>
+            <a href="{{ route('admin.database.index') }}"
+               class="{{ request()->routeIs('admin.database.*') ? 'active' : '' }}">
+                <i class="bi bi-database"></i>
+                База данных
+            </a>
+            <a href="{{ asset('help.html') }}"
+               target="_blank">
+                <i class="bi bi-question-circle"></i>
+                Инструкция / Помощь
             </a>
         </div>
 
@@ -221,6 +265,131 @@
 
         return $('<div>').text(text).html();
     }
+
+    function snapshotSelectOptions($select) {
+        return $select.find('option').map(function () {
+            return {
+                value: $(this).attr('value') ?? '',
+                text: $(this).text(),
+                selected: $(this).prop('selected'),
+                disabled: $(this).prop('disabled')
+            };
+        }).get();
+    }
+
+    function renderFilteredSelectOptions($select, items, preserveSelected = true) {
+        let selectedValues = preserveSelected ? ($select.val() || []) : [];
+
+        if (!Array.isArray(selectedValues)) {
+            selectedValues = [selectedValues];
+        }
+
+        let html = '';
+
+        items.forEach(function (item) {
+            let selected = selectedValues.some(function (value) {
+                return String(value) === String(item.value);
+            });
+
+            html += `<option value="${escapeHtml(item.value)}" ${item.disabled ? 'disabled' : ''} ${selected ? 'selected' : ''}>${escapeHtml(item.text)}</option>`;
+        });
+
+        $select.html(html);
+    }
+
+    function enhanceSearchableSelect($select) {
+        if (!$select.length || $select.data('search-enhanced') || $select.hasClass('no-search-select')) {
+            return;
+        }
+
+        let options = snapshotSelectOptions($select);
+
+        if (options.length < 8) {
+            $select.data('search-enhanced', true);
+            return;
+        }
+
+        let $box = $('<div class="searchable-select-box"></div>');
+        let placeholder = $select.attr('multiple') ? 'Поиск по списку...' : 'Поиск по вариантам...';
+        let $inputWrap = $('<div class="searchable-select-input-wrap"></div>');
+        let $icon = $('<span class="searchable-select-icon"><i class="bi bi-search"></i></span>');
+        let $input = $(`<input type="text" class="searchable-select-input" placeholder="${placeholder}">`);
+
+        $select.before($box);
+        $inputWrap.append($icon);
+        $inputWrap.append($input);
+        $box.append($inputWrap);
+        $box.append($select);
+
+        $select.data('search-enhanced', true);
+        $select.data('all-options', options);
+
+        $input.on('input', function () {
+            let query = ($(this).val() || '').trim().toLowerCase();
+            let allOptions = $select.data('all-options') || [];
+
+            if (!query) {
+                renderFilteredSelectOptions($select, allOptions);
+                return;
+            }
+
+            let filtered = allOptions.filter(function (item) {
+                return String(item.text).toLowerCase().includes(query);
+            });
+
+            renderFilteredSelectOptions($select, filtered);
+        });
+    }
+
+    function initSearchableSelects(root = document) {
+        $(root).find('select.form-select').each(function () {
+            enhanceSearchableSelect($(this));
+        });
+    }
+
+    function refreshSearchableSelect($select) {
+        if (!$select.length || !$select.data('search-enhanced')) {
+            return;
+        }
+
+        $select.data('all-options', snapshotSelectOptions($select));
+    }
+
+    $(function () {
+        initSearchableSelects();
+
+        const observer = new MutationObserver(function (mutations) {
+            mutations.forEach(function (mutation) {
+                mutation.addedNodes.forEach(function (node) {
+                    if (node.nodeType !== 1) {
+                        return;
+                    }
+
+                    if (node.tagName === 'OPTION') {
+                        let $parentSelect = $(node).closest('select.form-select');
+
+                        if ($parentSelect.length) {
+                            refreshSearchableSelect($parentSelect);
+                        }
+
+                        return;
+                    }
+
+                    if ($(node).is('select.form-select')) {
+                        enhanceSearchableSelect($(node));
+                        return;
+                    }
+
+                    initSearchableSelects(node);
+                });
+            });
+        });
+
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true
+        });
+    });
 </script>
 
 @stack('scripts')

@@ -10,6 +10,11 @@ class Directory extends Model
         'name',
         'code',
         'description',
+        'schema',
+    ];
+
+    protected $casts = [
+        'schema' => 'array',
     ];
 
     public function values()

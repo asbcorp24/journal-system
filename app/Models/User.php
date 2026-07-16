@@ -39,4 +39,9 @@ class User extends Authenticatable
         return $this->hasMany(Notification::class)
             ->where('is_read', false);
     }
+
+    public function journalPermissions()
+    {
+        return $this->hasMany(UserJournalPermission::class);
+    }
 }

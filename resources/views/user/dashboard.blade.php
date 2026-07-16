@@ -8,7 +8,7 @@
         <div>
             <h2 class="fw-bold mb-1">Мои журналы</h2>
             <div class="text-secondary">
-                Доступные журналы для вашего подразделения
+                Доступные журналы по подразделению и персональным назначениям
             </div>
         </div>
 
@@ -28,7 +28,7 @@
                 <h5 class="mt-3">Нет доступных журналов</h5>
 
                 <div class="text-secondary">
-                    Администратор ещё не назначил журналы вашему подразделению.
+                    Администратор ещё не назначил вам журналы или персональные доступы.
                 </div>
             </div>
         </div>
@@ -43,23 +43,25 @@
                                     <i class="bi bi-journal-text fs-4"></i>
                                 </div>
 
-                                <span class="badge bg-success">
-                                Активен
-                            </span>
+                                <span class="badge bg-success">Активен</span>
                             </div>
 
-                            <h5 class="fw-bold">
-                                {{ $journal->name }}
-                            </h5>
+                            <h5 class="fw-bold">{{ $journal->name }}</h5>
 
                             <div class="text-secondary small mb-3">
                                 {{ $journal->description ?: 'Описание не указано' }}
                             </div>
 
-                            <div class="mb-3">
-                            <span class="badge bg-secondary">
-                                Полей: {{ is_array($journal->schema) ? count($journal->schema) : 0 }}
-                            </span>
+                            <div class="mb-3 d-flex flex-wrap gap-2">
+                                <span class="badge bg-secondary">
+                                    Полей: {{ is_array($journal->schema) ? count($journal->schema) : 0 }}
+                                </span>
+
+                                @if(($journal->user_access_mode ?? 'full') === 'view')
+                                    <span class="badge bg-secondary">Только просмотр</span>
+                                @else
+                                    <span class="badge bg-success">Полный доступ</span>
+                                @endif
                             </div>
 
                             <div class="d-grid">

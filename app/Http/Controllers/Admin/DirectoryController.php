@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Directory;
 use App\Models\DirectoryValue;
 use App\Models\Division;
+use App\Support\DirectorySchema;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -54,36 +55,22 @@ class DirectoryController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'name' => [
-                'required',
-                'string',
-                'max:255',
-                'unique:directories,name',
-            ],
-            'code' => [
-                'nullable',
-                'string',
-                'max:255',
-                'unique:directories,code',
-            ],
-            'description' => [
-                'nullable',
-                'string',
-            ],
-            'division_ids' => [
-                'nullable',
-                'array',
-            ],
-            'division_ids.*' => [
-                'exists:divisions,id',
-            ],
+            'name' => ['required', 'string', 'max:255', 'unique:directories,name'],
+            'code' => ['nullable', 'string', 'max:255', 'unique:directories,code'],
+            'description' => ['nullable', 'string'],
+            'division_ids' => ['nullable', 'array'],
+            'division_ids.*' => ['exists:divisions,id'],
+            'schema' => ['nullable', 'array'],
         ]);
 
-        $directory = DB::transaction(function () use ($validated) {
+        $schema = DirectorySchema::normalizeSchema($validated['schema'] ?? []);
+
+        $directory = DB::transaction(function () use ($validated, $schema) {
             $directory = Directory::create([
                 'name' => $validated['name'],
                 'code' => $validated['code'] ?? null,
                 'description' => $validated['description'] ?? null,
+                'schema' => $schema,
             ]);
 
             $directory->divisions()->sync($validated['division_ids'] ?? []);
@@ -109,6 +96,7 @@ class DirectoryController extends Controller
                 'name' => $directory->name,
                 'code' => $directory->code,
                 'description' => $directory->description,
+                'schema' => $directory->schema ?? [],
                 'division_ids' => $directory->divisions->pluck('id')->values(),
             ],
         ]);
@@ -117,36 +105,22 @@ class DirectoryController extends Controller
     public function update(Request $request, Directory $directory)
     {
         $validated = $request->validate([
-            'name' => [
-                'required',
-                'string',
-                'max:255',
-                Rule::unique('directories', 'name')->ignore($directory->id),
-            ],
-            'code' => [
-                'nullable',
-                'string',
-                'max:255',
-                Rule::unique('directories', 'code')->ignore($directory->id),
-            ],
-            'description' => [
-                'nullable',
-                'string',
-            ],
-            'division_ids' => [
-                'nullable',
-                'array',
-            ],
-            'division_ids.*' => [
-                'exists:divisions,id',
-            ],
+            'name' => ['required', 'string', 'max:255', Rule::unique('directories', 'name')->ignore($directory->id)],
+            'code' => ['nullable', 'string', 'max:255', Rule::unique('directories', 'code')->ignore($directory->id)],
+            'description' => ['nullable', 'string'],
+            'division_ids' => ['nullable', 'array'],
+            'division_ids.*' => ['exists:divisions,id'],
+            'schema' => ['nullable', 'array'],
         ]);
 
-        DB::transaction(function () use ($directory, $validated) {
+        $schema = DirectorySchema::normalizeSchema($validated['schema'] ?? []);
+
+        DB::transaction(function () use ($directory, $validated, $schema) {
             $directory->update([
                 'name' => $validated['name'],
                 'code' => $validated['code'] ?? null,
                 'description' => $validated['description'] ?? null,
+                'schema' => $schema,
             ]);
 
             $directory->divisions()->sync($validated['division_ids'] ?? []);
@@ -171,6 +145,7 @@ class DirectoryController extends Controller
     public function valuesList(Request $request, Directory $directory)
     {
         $query = $directory->values()
+            ->with('directory')
             ->orderBy('sort_order')
             ->orderBy('value');
 
@@ -188,7 +163,9 @@ class DirectoryController extends Controller
         return response()->json([
             'success' => true,
             'directory' => $directory,
-            'items' => $values->items(),
+            'items' => collect($values->items())->map(function (DirectoryValue $value) {
+                return $this->serializeDirectoryValue($value);
+            })->values(),
             'pagination' => [
                 'current_page' => $values->currentPage(),
                 'last_page' => $values->lastPage(),
@@ -200,78 +177,87 @@ class DirectoryController extends Controller
         ]);
     }
 
+    public function print(Directory $directory)
+    {
+        $directory->load(['values' => function ($query) {
+            $query->orderBy('sort_order')->orderBy('value');
+        }]);
+
+        return view('admin.directories.print', [
+            'directory' => $directory,
+            'values' => $directory->values,
+            'schema' => $directory->schema ?? [],
+        ]);
+    }
+
+    public function printBarcodes(Directory $directory)
+    {
+        $directory->load(['values' => function ($query) {
+            $query->orderBy('sort_order')->orderBy('value');
+        }]);
+
+        $schema = $directory->schema ?? [];
+        $qrField = collect($schema)->firstWhere('type', 'qr');
+
+        return view('admin.directories.barcodes', [
+            'directory' => $directory,
+            'values' => $directory->values,
+            'schema' => $schema,
+            'qrField' => $qrField,
+        ]);
+    }
+
     public function valueStore(Request $request, Directory $directory)
     {
+        [$recordData, $displayValue] = $this->validateDirectoryValuePayload($request, $directory);
+
         $validated = $request->validate([
-            'value' => [
-                'required',
-                'string',
-                'max:255',
-            ],
-            'code' => [
-                'nullable',
-                'string',
-                'max:255',
-            ],
-            'sort_order' => [
-                'nullable',
-                'integer',
-                'min:0',
-            ],
-            'is_active' => [
-                'nullable',
-                'boolean',
-            ],
+            'code' => ['nullable', 'string', 'max:255'],
+            'sort_order' => ['nullable', 'integer', 'min:0'],
+            'is_active' => ['nullable', 'boolean'],
         ]);
 
         $value = $directory->values()->create([
-            'value' => $validated['value'],
+            'value' => $displayValue,
+            'data' => $recordData,
             'code' => $validated['code'] ?? null,
             'sort_order' => $validated['sort_order'] ?? 0,
             'is_active' => $request->boolean('is_active'),
         ]);
 
+        $value->setRelation('directory', $directory);
+
         return response()->json([
             'success' => true,
             'message' => 'Значение добавлено',
-            'value' => $value,
+            'value' => $this->serializeDirectoryValue($value),
         ]);
     }
 
     public function valueShow(DirectoryValue $value)
     {
+        $value->load('directory');
+
         return response()->json([
             'success' => true,
-            'value' => $value,
+            'value' => $this->serializeDirectoryValue($value),
         ]);
     }
 
     public function valueUpdate(Request $request, DirectoryValue $value)
     {
+        $value->load('directory');
+        [$recordData, $displayValue] = $this->validateDirectoryValuePayloadForUpdate($request, $value);
+
         $validated = $request->validate([
-            'value' => [
-                'required',
-                'string',
-                'max:255',
-            ],
-            'code' => [
-                'nullable',
-                'string',
-                'max:255',
-            ],
-            'sort_order' => [
-                'nullable',
-                'integer',
-                'min:0',
-            ],
-            'is_active' => [
-                'nullable',
-                'boolean',
-            ],
+            'code' => ['nullable', 'string', 'max:255'],
+            'sort_order' => ['nullable', 'integer', 'min:0'],
+            'is_active' => ['nullable', 'boolean'],
         ]);
 
         $value->update([
-            'value' => $validated['value'],
+            'value' => $displayValue,
+            'data' => $recordData,
             'code' => $validated['code'] ?? null,
             'sort_order' => $validated['sort_order'] ?? 0,
             'is_active' => $request->boolean('is_active'),
@@ -296,26 +282,14 @@ class DirectoryController extends Controller
     public function importCsv(Request $request, Directory $directory)
     {
         $request->validate([
-            'csv_file' => [
-                'required',
-                'file',
-                'mimes:csv,txt',
-            ],
-            'delimiter' => [
-                'required',
-                'string',
-                'max:2',
-            ],
-            'has_header' => [
-                'nullable',
-                'boolean',
-            ],
+            'csv_file' => ['required', 'file', 'mimes:csv,txt'],
+            'delimiter' => ['required', 'string', 'max:2'],
+            'has_header' => ['nullable', 'boolean'],
         ]);
 
         $file = $request->file('csv_file');
         $delimiter = $request->input('delimiter', ';');
         $hasHeader = $request->boolean('has_header');
-
         $path = $file->getRealPath();
 
         if (!$path || !file_exists($path)) {
@@ -337,6 +311,8 @@ class DirectoryController extends Controller
         $created = 0;
         $skipped = 0;
         $rowNumber = 0;
+        $schema = $directory->schema ?? [];
+        $header = [];
 
         DB::beginTransaction();
 
@@ -345,20 +321,50 @@ class DirectoryController extends Controller
                 $rowNumber++;
 
                 if ($rowNumber === 1 && $hasHeader) {
+                    $header = collect($row)->map(fn ($item) => trim((string)$item))->values()->all();
                     continue;
                 }
 
-                $value = trim($row[0] ?? '');
-                $code = trim($row[1] ?? '');
-                $sortOrder = trim($row[2] ?? '');
+                $recordData = null;
+                $displayValue = '';
+                $code = '';
+                $sortOrder = '';
 
-                if ($value === '') {
+                if (!empty($schema)) {
+                    $input = [];
+
+                    foreach ($schema as $index => $field) {
+                        $columnIndex = $hasHeader ? array_search($field['key'], $header, true) : $index;
+                        $columnIndex = $columnIndex === false ? $index : $columnIndex;
+                        $input[$field['key']] = trim((string)($row[$columnIndex] ?? ''));
+                    }
+
+                    $input = $this->applyAutoGeneratedQrFields($schema, $input);
+                    $recordData = DirectorySchema::validateRecord($schema, $input);
+                    try {
+                        DirectorySchema::validateUniqueFields($schema, $recordData, $directory->values()->get(['id', 'data']));
+                    } catch (\Illuminate\Validation\ValidationException $e) {
+                        $skipped++;
+                        continue;
+                    }
+                    $displayValue = DirectorySchema::resolveDisplayValue($schema, $recordData);
+                    $codeIndex = count($schema);
+                    $sortIndex = count($schema) + 1;
+                    $code = trim((string)($row[$codeIndex] ?? ''));
+                    $sortOrder = trim((string)($row[$sortIndex] ?? ''));
+                } else {
+                    $displayValue = trim((string)($row[0] ?? ''));
+                    $code = trim((string)($row[1] ?? ''));
+                    $sortOrder = trim((string)($row[2] ?? ''));
+                }
+
+                if ($displayValue === '') {
                     $skipped++;
                     continue;
                 }
 
                 $exists = DirectoryValue::where('directory_id', $directory->id)
-                    ->where('value', $value)
+                    ->where('value', $displayValue)
                     ->exists();
 
                 if ($exists) {
@@ -368,7 +374,8 @@ class DirectoryController extends Controller
 
                 DirectoryValue::create([
                     'directory_id' => $directory->id,
-                    'value' => $value,
+                    'value' => $displayValue,
+                    'data' => $recordData,
                     'code' => $code !== '' ? $code : null,
                     'sort_order' => is_numeric($sortOrder) ? (int)$sortOrder : 0,
                     'is_active' => true,
@@ -378,7 +385,6 @@ class DirectoryController extends Controller
             }
 
             fclose($handle);
-
             DB::commit();
 
             return response()->json([
@@ -389,7 +395,6 @@ class DirectoryController extends Controller
             ]);
         } catch (\Throwable $e) {
             fclose($handle);
-
             DB::rollBack();
 
             return response()->json([
@@ -397,5 +402,101 @@ class DirectoryController extends Controller
                 'message' => 'Ошибка импорта CSV: ' . $e->getMessage(),
             ], 500);
         }
+    }
+
+    private function validateDirectoryValuePayload(Request $request, Directory $directory): array
+    {
+        $schema = $directory->schema ?? [];
+
+        if (empty($schema)) {
+            $validated = $request->validate([
+                'value' => ['required', 'string', 'max:255'],
+            ]);
+
+            return [null, trim($validated['value'])];
+        }
+
+        $request->validate([
+            'data' => ['required', 'array'],
+        ]);
+
+        $input = $this->applyAutoGeneratedQrFields($schema, $request->input('data', []));
+        $recordData = DirectorySchema::validateRecord($schema, $input);
+        DirectorySchema::validateUniqueFields($schema, $recordData, $directory->values()->get(['id', 'data']));
+        $displayValue = DirectorySchema::resolveDisplayValue($schema, $recordData);
+
+        return [$recordData, $displayValue];
+    }
+
+    private function validateDirectoryValuePayloadForUpdate(Request $request, DirectoryValue $value): array
+    {
+        $directory = $value->directory;
+        $schema = $directory->schema ?? [];
+
+        if (empty($schema)) {
+            $validated = $request->validate([
+                'value' => ['required', 'string', 'max:255'],
+            ]);
+
+            return [null, trim($validated['value'])];
+        }
+
+        $request->validate([
+            'data' => ['required', 'array'],
+        ]);
+
+        $input = $this->applyAutoGeneratedQrFields($schema, $request->input('data', []), $value->data ?? []);
+        $recordData = DirectorySchema::validateRecord($schema, $input);
+        DirectorySchema::validateUniqueFields($schema, $recordData, $directory->values()->get(['id', 'data']), $value->id);
+        $displayValue = DirectorySchema::resolveDisplayValue($schema, $recordData);
+
+        return [$recordData, $displayValue];
+    }
+
+    private function serializeDirectoryValue(DirectoryValue $value): array
+    {
+        return [
+            'id' => $value->id,
+            'directory_id' => $value->directory_id,
+            'value' => $value->value,
+            'data' => $value->data,
+            'code' => $value->code,
+            'sort_order' => $value->sort_order,
+            'is_active' => (bool)$value->is_active,
+            'created_at' => $value->created_at,
+            'updated_at' => $value->updated_at,
+        ];
+    }
+
+    private function applyAutoGeneratedQrFields(array $schema, array $data, array $existingData = []): array
+    {
+        foreach ($schema as $field) {
+            if (($field['type'] ?? null) !== 'qr' || empty($field['auto_generate'])) {
+                continue;
+            }
+
+            $key = $field['key'] ?? null;
+            if (!$key) {
+                continue;
+            }
+
+            if (!empty($data[$key])) {
+                continue;
+            }
+
+            if (!empty($existingData[$key])) {
+                $data[$key] = $existingData[$key];
+                continue;
+            }
+
+            $data[$key] = $this->generateQrValue();
+        }
+
+        return $data;
+    }
+
+    private function generateQrValue(): string
+    {
+        return 'QR-' . now()->format('YmdHis') . '-' . strtoupper(substr(bin2hex(random_bytes(3)), 0, 6));
     }
 }

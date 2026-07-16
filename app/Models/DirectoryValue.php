@@ -9,9 +9,15 @@ class DirectoryValue extends Model
     protected $fillable = [
         'directory_id',
         'value',
+        'data',
         'code',
         'sort_order',
         'is_active',
+    ];
+
+    protected $casts = [
+        'data' => 'array',
+        'is_active' => 'boolean',
     ];
 
     public function directory()

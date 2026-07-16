@@ -1,10 +1,686 @@
-<!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+<html lang="ru">
 <head>
-  <meta charset="UTF-8">
-  <title>$Title$</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Инструкция пользователя и администратора — Электронные журналы</title>
+    <style>
+        :root {
+            --bg: #07111f;
+            --bg2: #0b1728;
+            --panel: #101d32;
+            --panel2: #13243d;
+            --text: #eaf2ff;
+            --muted: #9fb1ca;
+            --border: rgba(132, 169, 218, .24);
+            --accent: #48b6ff;
+            --accent2: #6ee7b7;
+            --danger: #ff6b6b;
+            --warning: #ffd166;
+            --ok: #5ee38c;
+            --shadow: 0 18px 45px rgba(0,0,0,.35);
+            --radius: 18px;
+            --mono: Consolas, Monaco, "Courier New", monospace;
+            --font: Inter, Segoe UI, Roboto, Arial, sans-serif;
+        }
+
+        * { box-sizing: border-box; }
+        html { scroll-behavior: smooth; }
+
+        body {
+            margin: 0;
+            font-family: var(--font);
+            background:
+                radial-gradient(circle at 20% 0%, rgba(72,182,255,.18), transparent 32%),
+                radial-gradient(circle at 80% 10%, rgba(110,231,183,.12), transparent 35%),
+                linear-gradient(180deg, #06101e 0%, #091423 50%, #060b14 100%);
+            color: var(--text);
+            line-height: 1.65;
+        }
+
+        a { color: var(--accent); text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        .layout {
+            display: grid;
+            grid-template-columns: 320px minmax(0, 1fr);
+            min-height: 100vh;
+        }
+
+        .sidebar {
+            position: sticky;
+            top: 0;
+            height: 100vh;
+            overflow: auto;
+            padding: 24px 18px;
+            background: rgba(7,17,31,.92);
+            border-right: 1px solid var(--border);
+            backdrop-filter: blur(12px);
+        }
+
+        .brand {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            margin-bottom: 22px;
+            padding: 14px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            background: rgba(255,255,255,.04);
+            box-shadow: var(--shadow);
+        }
+
+        .brand-icon {
+            width: 44px;
+            height: 44px;
+            display: grid;
+            place-items: center;
+            border-radius: 14px;
+            background: linear-gradient(135deg, var(--accent), #0ea5e9);
+            font-weight: 800;
+            color: #fff;
+        }
+
+        .brand-title {
+            font-size: 16px;
+            font-weight: 800;
+            line-height: 1.2;
+        }
+
+        .brand-subtitle {
+            color: var(--muted);
+            font-size: 12px;
+            margin-top: 2px;
+        }
+
+        .nav-title {
+            color: var(--muted);
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: .08em;
+            margin: 20px 10px 8px;
+        }
+
+        .nav a {
+            display: block;
+            padding: 9px 12px;
+            margin: 4px 0;
+            border-radius: 12px;
+            color: #d9e8ff;
+            border: 1px solid transparent;
+        }
+
+        .nav a:hover {
+            background: rgba(72,182,255,.1);
+            border-color: rgba(72,182,255,.2);
+            text-decoration: none;
+        }
+
+        main {
+            padding: 34px;
+            max-width: 1180px;
+            width: 100%;
+        }
+
+        .hero {
+            padding: 34px;
+            border: 1px solid var(--border);
+            border-radius: 28px;
+            background:
+                linear-gradient(135deg, rgba(72,182,255,.14), rgba(110,231,183,.08)),
+                rgba(16,29,50,.76);
+            box-shadow: var(--shadow);
+            margin-bottom: 24px;
+        }
+
+        .hero h1 {
+            margin: 0 0 10px;
+            font-size: clamp(28px, 4vw, 46px);
+            line-height: 1.1;
+        }
+
+        .hero p {
+            max-width: 900px;
+            color: #c7d8ef;
+            font-size: 17px;
+            margin: 0;
+        }
+
+        .meta-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 14px;
+            margin-top: 24px;
+        }
+
+        .meta-card, .section, .card {
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            background: rgba(16,29,50,.82);
+            box-shadow: var(--shadow);
+        }
+
+        .meta-card { padding: 16px; }
+        .meta-label {
+            color: var(--muted);
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: .08em;
+        }
+
+        .meta-value {
+            margin-top: 4px;
+            font-weight: 750;
+            font-size: 17px;
+        }
+
+        .section {
+            margin: 22px 0;
+            padding: 28px;
+        }
+
+        .section h2 {
+            margin: 0 0 12px;
+            font-size: 28px;
+            line-height: 1.2;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 12px;
+        }
+
+        .section h3 {
+            margin-top: 26px;
+            margin-bottom: 10px;
+            font-size: 21px;
+        }
+
+        .lead { color: #c7d8ef; font-size: 16px; }
+        .muted { color: var(--muted); }
+
+        .cards {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 16px;
+            margin: 18px 0;
+        }
+
+        .card { padding: 18px; }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 10px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 700;
+            border: 1px solid rgba(255,255,255,.12);
+            background: rgba(255,255,255,.06);
+        }
+
+        .badge.info { background: rgba(72,182,255,.12); color: #9edbff; }
+        .badge.ok { background: rgba(94,227,140,.12); color: #a6f2bf; }
+        .badge.warn { background: rgba(255,209,102,.12); color: #ffe29b; }
+        .badge.danger { background: rgba(255,107,107,.14); color: #ffb3b3; }
+
+        .notice {
+            margin-top: 16px;
+            padding: 14px 16px;
+            border-radius: 14px;
+            border: 1px solid rgba(72,182,255,.24);
+            background: rgba(72,182,255,.08);
+        }
+
+        .notice.ok {
+            border-color: rgba(94,227,140,.24);
+            background: rgba(94,227,140,.08);
+        }
+
+        .notice.warn {
+            border-color: rgba(255,209,102,.24);
+            background: rgba(255,209,102,.08);
+        }
+
+        .notice.danger {
+            border-color: rgba(255,107,107,.24);
+            background: rgba(255,107,107,.08);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 12px;
+            overflow: hidden;
+            border-radius: 14px;
+        }
+
+        th, td {
+            padding: 12px 14px;
+            border: 1px solid rgba(255,255,255,.08);
+            vertical-align: top;
+        }
+
+        th {
+            text-align: left;
+            background: rgba(255,255,255,.05);
+        }
+
+        ul, ol { padding-left: 22px; }
+        code, pre { font-family: var(--mono); }
+        pre {
+            white-space: pre-wrap;
+            padding: 16px;
+            border-radius: 14px;
+            background: rgba(255,255,255,.04);
+            border: 1px solid rgba(255,255,255,.08);
+            overflow: auto;
+        }
+
+        .footer {
+            color: var(--muted);
+            font-size: 13px;
+            padding: 10px 0 30px;
+        }
+
+        @media (max-width: 980px) {
+            .layout {
+                grid-template-columns: 1fr;
+            }
+
+            .sidebar {
+                position: static;
+                height: auto;
+                border-right: 0;
+                border-bottom: 1px solid var(--border);
+            }
+
+            .meta-grid, .cards {
+                grid-template-columns: 1fr;
+            }
+
+            main {
+                padding: 18px;
+            }
+        }
+    </style>
 </head>
 <body>
-$END$
+<div class="layout">
+    <aside class="sidebar">
+        <div class="brand">
+            <div class="brand-icon">Ж</div>
+            <div>
+                <div class="brand-title">Электронные журналы</div>
+                <div class="brand-subtitle">Инструкция администратора и пользователя</div>
+            </div>
+        </div>
+
+        <div class="nav">
+            <div class="nav-title">Разделы</div>
+            <a href="#purpose">1. Назначение системы</a>
+            <a href="#roles">2. Роли и доступы</a>
+            <a href="#setup">3. Первичная настройка</a>
+            <a href="#divisions">4. Подразделения</a>
+            <a href="#directories">5. Справочники</a>
+            <a href="#templates">6. Шаблоны журналов</a>
+            <a href="#fill-journal">7. Заполнение журнала</a>
+            <a href="#search-filter">8. Поиск и фильтрация</a>
+            <a href="#faq">9. Частые вопросы</a>
+            <a href="#checklists">10. Чек-листы</a>
+        </div>
+    </aside>
+
+    <main>
+        <section class="hero">
+            <h1>Инструкция по работе с системой электронных журналов</h1>
+            <p>
+                Документ предназначен для супер-администраторов, администраторов, бригадиров и пользователей системы.
+                В инструкции описаны настройка подразделений, справочников, шаблонов журналов, фильтров и работа с удалёнными записями.
+            </p>
+
+            <div class="meta-grid">
+                <div class="meta-card">
+                    <div class="meta-label">Справочники</div>
+                    <div class="meta-value">Поля JSON по шаблону</div>
+                </div>
+                <div class="meta-card">
+                    <div class="meta-label">Журналы</div>
+                    <div class="meta-value">Фильтры, полноэкранный режим, soft delete</div>
+                </div>
+                <div class="meta-card">
+                    <div class="meta-label">Доступ</div>
+                    <div class="meta-value">С учётом иерархии подразделений</div>
+                </div>
+            </div>
+        </section>
+
+        <section id="purpose" class="section">
+            <h2>1. Назначение системы</h2>
+            <p class="lead">
+                Система электронных журналов предназначена для ведения производственных, технологических,
+                лабораторных и иных журналов в электронном виде.
+            </p>
+
+            <div class="cards">
+                <div class="card">
+                    <h3>Основные задачи</h3>
+                    <ul>
+                        <li>создание шаблонов журналов без программирования;</li>
+                        <li>заполнение журналов по ролям и подразделениям;</li>
+                        <li>использование справочников со структурированными полями;</li>
+                        <li>контроль данных, фильтрация, просмотр и печать.</li>
+                    </ul>
+                </div>
+                <div class="card">
+                    <h3>Для кого подходит</h3>
+                    <ul>
+                        <li>производственным подразделениям;</li>
+                        <li>бригадирам и ответственным сотрудникам;</li>
+                        <li>администраторам, контролирующим данные и доступы.</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <section id="roles" class="section">
+            <h2>2. Роли и доступы</h2>
+            <p>
+                Доступ к функциям зависит от роли пользователя, его подразделения и настроек шаблонов.
+                Для администраторов учитывается также иерархия подразделений.
+            </p>
+
+            <table>
+                <thead>
+                <tr>
+                    <th>Роль</th>
+                    <th>Возможности</th>
+                    <th>Ограничения</th>
+                </tr>
+                </thead>
+                <tbody>
+                <tr>
+                    <td><span class="badge info">Супер-админ</span></td>
+                    <td>Полное управление системой, подразделениями, шаблонами справочников, справочниками, журналами и доступами.</td>
+                    <td>Нет ограничений в рамках системы.</td>
+                </tr>
+                <tr>
+                    <td><span class="badge ok">Администратор</span></td>
+                    <td>Работает со своим подразделением и всеми дочерними. Может редактировать значения справочников, просматривать удалённые записи и восстанавливать их.</td>
+                    <td>Не изменяет глобальные настройки супер-админа.</td>
+                </tr>
+                <tr>
+                    <td><span class="badge warn">Бригадир</span></td>
+                    <td>Заполняет журналы, просматривает записи своего подразделения, добавляет и редактирует значения доступных справочников.</td>
+                    <td>Не удаляет значения справочников и не меняет системные шаблоны.</td>
+                </tr>
+                <tr>
+                    <td><span class="badge">Пользователь</span></td>
+                    <td>Заполняет доступные журналы и просматривает разрешённые записи.</td>
+                    <td>Работает только с доступными журналами.</td>
+                </tr>
+                </tbody>
+            </table>
+
+            <div class="notice warn">
+                Если пользователь не видит нужный журнал или справочник, проверьте его роль, подразделение,
+                родительское подразделение и доступы к шаблону журнала.
+            </div>
+        </section>
+
+        <section id="setup" class="section">
+            <h2>3. Первичная настройка</h2>
+            <ol>
+                <li>Создайте подразделения и при необходимости задайте родительские связи.</li>
+                <li>Создайте пользователей и назначьте им роли.</li>
+                <li>Супер-админ настраивает шаблоны справочников.</li>
+                <li>Создайте справочники и заполните их значениями.</li>
+                <li>Создайте шаблоны журналов и включите фильтры только у нужных полей.</li>
+                <li>Проверьте тестовое заполнение журнала и отображение значений из справочников.</li>
+            </ol>
+        </section>
+
+        <section id="divisions" class="section">
+            <h2>4. Подразделения</h2>
+            <p>
+                Подразделения используются для разграничения доступа к пользователям, справочникам, шаблонам и записям журналов.
+                У подразделения можно указать родителя.
+            </p>
+
+            <h3>Как настроить</h3>
+            <ol>
+                <li>Откройте раздел <strong>Подразделения</strong>.</li>
+                <li>Создайте новое подразделение или откройте существующее.</li>
+                <li>Укажите название и при необходимости выберите <strong>родительское подразделение</strong>.</li>
+                <li>Сохраните изменения.</li>
+            </ol>
+
+            <div class="notice ok">
+                Если администратор назначен на родительское подразделение, он получает доступ к журналам и справочникам
+                всех дочерних подразделений.
+            </div>
+        </section>
+
+        <section id="directories" class="section">
+            <h2>5. Справочники</h2>
+            <p>
+                Справочник теперь может хранить не одно текстовое значение, а набор полей в формате JSON по шаблону справочника.
+            </p>
+
+            <h3>Шаблон справочника</h3>
+            <p>
+                Шаблон справочника создаёт супер-админ. В шаблоне доступны поля типов:
+                текст, число, дата, время и список.
+            </p>
+            <ul>
+                <li>у каждого поля есть название и системный ключ;</li>
+                <li>поле можно сделать обязательным;</li>
+                <li>поле можно отметить как <strong>Уникальное</strong>;</li>
+                <li>для поля типа список задаются варианты выбора.</li>
+            </ul>
+
+            <h3>Создание справочника</h3>
+            <ol>
+                <li>Откройте раздел <strong>Справочники</strong>.</li>
+                <li>Нажмите <strong>Добавить справочник</strong>.</li>
+                <li>Введите название.</li>
+                <li>Выберите шаблон или настройте поля справочника.</li>
+                <li>Назначьте подразделения, которым доступен справочник.</li>
+                <li>Сохраните справочник.</li>
+            </ol>
+
+            <h3>Работа со значениями</h3>
+            <ul>
+                <li>админ и бригадир могут открывать справочник из меню и добавлять значения;</li>
+                <li>админ и бригадир могут редактировать существующие значения;</li>
+                <li>только админ может удалять значения справочника;</li>
+                <li>если для поля включена уникальность, система не даст сохранить дубликат.</li>
+            </ul>
+
+            <div class="notice warn">
+                Если значение справочника уже используется в журнале, перед удалением проверьте последствия.
+            </div>
+        </section>
+
+        <section id="templates" class="section">
+            <h2>6. Шаблоны журналов</h2>
+            <p>
+                Шаблон журнала определяет структуру формы, которую будут заполнять пользователи.
+            </p>
+
+            <h3>Типы полей</h3>
+            <table>
+                <thead>
+                <tr>
+                    <th>Тип поля</th>
+                    <th>Назначение</th>
+                    <th>Пример</th>
+                </tr>
+                </thead>
+                <tbody>
+                <tr>
+                    <td>Строка</td>
+                    <td>Свободный текст.</td>
+                    <td>Комментарий</td>
+                </tr>
+                <tr>
+                    <td>Число</td>
+                    <td>Числовое значение.</td>
+                    <td>Температура</td>
+                </tr>
+                <tr>
+                    <td>Дата</td>
+                    <td>Выбор даты.</td>
+                    <td>Дата проверки</td>
+                </tr>
+                <tr>
+                    <td>Время</td>
+                    <td>Выбор времени.</td>
+                    <td>Время замера</td>
+                </tr>
+                <tr>
+                    <td>Список</td>
+                    <td>Выбор одного значения из набора.</td>
+                    <td>Норма / Не норма</td>
+                </tr>
+                <tr>
+                    <td>Справочник</td>
+                    <td>Выбор значения из справочника.</td>
+                    <td>Оборудование</td>
+                </tr>
+                <tr>
+                    <td>Расчётное поле</td>
+                    <td>Автоматический расчёт по формуле.</td>
+                    <td>Разница температур</td>
+                </tr>
+                </tbody>
+            </table>
+
+            <h3>Как настроить шаблон</h3>
+            <ol>
+                <li>Откройте раздел <strong>Шаблоны журналов</strong>.</li>
+                <li>Нажмите <strong>Создать шаблон</strong>.</li>
+                <li>Введите название журнала.</li>
+                <li>Добавьте нужные поля.</li>
+                <li>Для каждого поля задайте тип, обязательность и параметры.</li>
+                <li>Для поля типа <strong>справочник</strong> выберите сам справочник и укажите, какое поле будет отображаться в списке выбора.</li>
+                <li>Включите галочку <strong>Фильтр</strong> только у тех полей, по которым нужен фильтр в журнале.</li>
+                <li>Назначьте доступные подразделения и сохраните шаблон.</li>
+            </ol>
+
+            <div class="notice">
+                Если у справочника несколько полей, отображаемое поле обязательно.
+                Именно его пользователь будет видеть в выборе и в таблице журнала.
+            </div>
+        </section>
+
+        <section id="fill-journal" class="section">
+            <h2>7. Заполнение журнала</h2>
+            <p>
+                Форма журнала строится автоматически на основании шаблона.
+            </p>
+
+            <h3>Правила заполнения</h3>
+            <ul>
+                <li>обязательные поля должны быть заполнены перед сохранением;</li>
+                <li>числовые поля принимают только числа;</li>
+                <li>поля даты и времени заполняются через встроенные элементы формы;</li>
+                <li>поля-справочники выбираются из списка с поиском;</li>
+                <li>в коротких списках строка поиска может скрываться, при этом остаётся иконка лупы;</li>
+                <li>расчётные поля не редактируются вручную.</li>
+            </ul>
+
+            <h3>Дополнительные возможности</h3>
+            <ul>
+                <li>журнал можно открыть кнопкой <strong>На весь экран</strong>;</li>
+                <li>в полноэкранном режиме доступны кнопки печати и добавления записи;</li>
+                <li>удаление записи работает как мягкое удаление: запись помечается удалённой, но не исчезает из базы;</li>
+                <li>админ может включить показ удалённых записей и восстановить запись кнопкой <strong>Восстановить</strong>.</li>
+            </ul>
+        </section>
+
+        <section id="search-filter" class="section">
+            <h2>8. Поиск и фильтрация</h2>
+            <p>
+                В фильтрах журнала отображаются только те поля, у которых в конструкторе шаблона включена галочка <strong>Фильтр</strong>.
+            </p>
+
+            <h3>Что можно фильтровать</h3>
+            <ul>
+                <li>период;</li>
+                <li>пользователя;</li>
+                <li>подразделение;</li>
+                <li>поля справочников и списков;</li>
+                <li>статус;</li>
+                <li>числовые значения;</li>
+                <li>текст комментария.</li>
+            </ul>
+
+            <h3>Порядок работы</h3>
+            <ol>
+                <li>Откройте нужный журнал.</li>
+                <li>Заполните нужные условия фильтра.</li>
+                <li>Нажмите <strong>Применить</strong>.</li>
+                <li>Для очистки используйте <strong>Сбросить</strong>.</li>
+            </ol>
+
+            <div class="notice ok">
+                Для администратора доступен отдельный просмотр удалённых записей, если нужно проверить или восстановить их.
+            </div>
+        </section>
+
+        <section id="faq" class="section">
+            <h2>9. Частые вопросы</h2>
+
+            <h3>Почему пользователь не видит журнал?</h3>
+            <p>
+                Проверьте роль пользователя, его подразделение, родительское подразделение и доступы к шаблону журнала.
+            </p>
+
+            <h3>Почему значение из справочника не отображается?</h3>
+            <p>
+                Проверьте, привязан ли справочник к нужному подразделению и выбрано ли отображаемое поле в настройках поля журнала.
+            </p>
+
+            <h3>Почему нельзя сохранить значение справочника?</h3>
+            <p>
+                Обычно причина в незаполненном обязательном поле или нарушении уникальности.
+                Если поле отмечено как уникальное, одинаковое значение повторно сохранить нельзя.
+            </p>
+
+            <h3>Куда пропала удалённая запись журнала?</h3>
+            <p>
+                Запись не удаляется окончательно, а помечается как удалённая.
+                Администратор может включить показ удалённых записей и восстановить её.
+            </p>
+        </section>
+
+        <section id="checklists" class="section">
+            <h2>10. Чек-листы</h2>
+
+            <h3>Чек-лист администратора</h3>
+            <ul>
+                <li>созданы подразделения и настроены родительские связи;</li>
+                <li>созданы пользователи и назначены роли;</li>
+                <li>созданы шаблоны справочников;</li>
+                <li>созданы справочники и заполнены значениями;</li>
+                <li>для шаблонов журналов выбраны отображаемые поля справочников;</li>
+                <li>включены только нужные фильтры полей;</li>
+                <li>проверено тестовое заполнение журнала.</li>
+            </ul>
+
+            <h3>Чек-лист пользователя</h3>
+            <ul>
+                <li>выбран правильный журнал;</li>
+                <li>заполнены обязательные поля;</li>
+                <li>значения из справочников выбраны корректно;</li>
+                <li>ошибки валидации отсутствуют;</li>
+                <li>запись появилась в таблице после сохранения.</li>
+            </ul>
+        </section>
+
+        <div class="footer">
+            Инструкция подготовлена для системы электронных журналов. Документ можно сохранить в PDF через функцию печати браузера.
+        </div>
+    </main>
+</div>
 </body>
 </html>

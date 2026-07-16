@@ -57,6 +57,10 @@
                 </td>
 
                 <td class="text-end">
+                    <button class="btn btn-sm btn-outline-warning manage-user-permissions" data-id="{{ $user->id }}" data-name="{{ $user->name }}">
+                        <i class="bi bi-shield-lock"></i>
+                    </button>
+
                     <button class="btn btn-sm btn-outline-info edit-user" data-id="{{ $user->id }}">
                         <i class="bi bi-pencil"></i>
                     </button>

@@ -183,9 +183,19 @@ class JournalTemplateController extends Controller
                 'nullable',
                 'boolean',
             ],
+            'schema.*.filterable' => [
+                'nullable',
+                'boolean',
+            ],
             'schema.*.directory_id' => [
                 'nullable',
                 'exists:directories,id',
+            ],
+            'schema.*.directory_display_field' => [
+                'nullable',
+                'string',
+                'max:100',
+                'regex:/^[a-zA-Z0-9_]+$/',
             ],
             'schema.*.options' => [
                 'nullable',
@@ -225,7 +235,6 @@ class JournalTemplateController extends Controller
                 'max:100',
                 'regex:/^[a-zA-Z0-9_]+$/',
             ],
-
             'division_ids' => [
                 'nullable',
                 'array',
@@ -240,7 +249,6 @@ class JournalTemplateController extends Controller
         ];
 
         $validated = $request->validate($rules);
-
         $keys = collect($validated['schema'])->pluck('key')->toArray();
 
         if (count($keys) !== count(array_unique($keys))) {
@@ -249,23 +257,25 @@ class JournalTemplateController extends Controller
                 'message' => 'Ключи полей не должны повторяться',
             ], 422));
         }
+
         foreach ($validated['schema'] as $field) {
             $validation = $field['validation'] ?? [];
 
-            if (!empty($validation['greater_than_field']) && !in_array($validation['greater_than_field'], $keys)) {
+            if (!empty($validation['greater_than_field']) && !in_array($validation['greater_than_field'], $keys, true)) {
                 abort(response()->json([
                     'success' => false,
                     'message' => "В ограничении поля «{$field['label']}» указано несуществующее поле: {$validation['greater_than_field']}",
                 ], 422));
             }
 
-            if (!empty($validation['less_than_field']) && !in_array($validation['less_than_field'], $keys)) {
+            if (!empty($validation['less_than_field']) && !in_array($validation['less_than_field'], $keys, true)) {
                 abort(response()->json([
                     'success' => false,
                     'message' => "В ограничении поля «{$field['label']}» указано несуществующее поле: {$validation['less_than_field']}",
                 ], 422));
             }
         }
+
         $schema = [];
 
         foreach ($validated['schema'] as $field) {
@@ -274,10 +284,11 @@ class JournalTemplateController extends Controller
                 'label' => $field['label'],
                 'type' => $field['type'],
                 'required' => !empty($field['required']),
+                'filterable' => !empty($field['filterable']),
             ];
-            if (in_array($field['type'], ['number', 'calc'])) {
-                $validation = $field['validation'] ?? [];
 
+            if (in_array($field['type'], ['number', 'calc'], true)) {
+                $validation = $field['validation'] ?? [];
                 $cleanValidation = [];
 
                 if (isset($validation['min']) && $validation['min'] !== '') {
@@ -300,7 +311,8 @@ class JournalTemplateController extends Controller
                     $item['validation'] = $cleanValidation;
                 }
             }
-            if (in_array($field['type'], ['directory', 'directory_text'])) {
+
+            if (in_array($field['type'], ['directory', 'directory_text'], true)) {
                 if (empty($field['directory_id'])) {
                     abort(response()->json([
                         'success' => false,
@@ -308,7 +320,35 @@ class JournalTemplateController extends Controller
                     ], 422));
                 }
 
+                $directory = Directory::find((int)$field['directory_id']);
+                $directorySchema = $directory?->schema ?? [];
+                $displayField = $field['directory_display_field'] ?? null;
+
+                if (!empty($directorySchema)) {
+                    if (empty($displayField)) {
+                        abort(response()->json([
+                            'success' => false,
+                            'message' => "Для поля «{$field['label']}» нужно выбрать отображаемое поле справочника",
+                        ], 422));
+                    }
+
+                    $existsInSchema = collect($directorySchema)->contains(function ($directoryField) use ($displayField) {
+                        return ($directoryField['key'] ?? null) === $displayField;
+                    });
+
+                    if (!$existsInSchema) {
+                        abort(response()->json([
+                            'success' => false,
+                            'message' => "Для поля «{$field['label']}» выбрано несуществующее поле справочника",
+                        ], 422));
+                    }
+                }
+
                 $item['directory_id'] = (int)$field['directory_id'];
+
+                if (!empty($displayField)) {
+                    $item['directory_display_field'] = $displayField;
+                }
             }
 
             if ($field['type'] === 'list') {

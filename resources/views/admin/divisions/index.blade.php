@@ -45,13 +45,13 @@
 
     <div class="card">
         <div class="card-body">
-
             <div class="table-responsive">
                 <table class="table table-dark table-hover align-middle">
                     <thead>
                     <tr>
                         <th style="width: 80px;">ID</th>
                         <th>Название</th>
+                        <th>Родительский отдел</th>
                         <th>Описание</th>
                         <th style="width: 170px;">Дата создания</th>
                         <th style="width: 130px;" class="text-end">Действия</th>
@@ -60,7 +60,7 @@
 
                     <tbody id="divisionsTableBody">
                     <tr>
-                        <td colspan="5" class="text-center text-secondary py-5">
+                        <td colspan="6" class="text-center text-secondary py-5">
                             Загрузка...
                         </td>
                     </tr>
@@ -75,7 +75,6 @@
                     <ul class="pagination mb-0" id="paginationLinks"></ul>
                 </nav>
             </div>
-
         </div>
     </div>
 
@@ -102,6 +101,13 @@
                                id="name"
                                class="form-control"
                                placeholder="Например: Цех №1">
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Родительский отдел</label>
+                        <select name="parent_id" id="parent_id" class="form-select">
+                            <option value="">Без родителя</option>
+                        </select>
                     </div>
 
                     <div class="mb-3">
@@ -134,8 +140,8 @@
 @push('scripts')
     <script>
         let divisionModal = new bootstrap.Modal(document.getElementById('divisionModal'));
-
         let currentPage = 1;
+        let divisionOptions = @json($divisionOptions);
 
         function escapeHtml(text) {
             if (text === null || text === undefined) {
@@ -159,16 +165,31 @@
             return date.toLocaleString('ru-RU');
         }
 
+        function renderParentOptions(currentId = null, selectedId = null) {
+            let html = '<option value="">Без родителя</option>';
+
+            divisionOptions.forEach(function (item) {
+                if (currentId && String(item.id) === String(currentId)) {
+                    return;
+                }
+
+                let selected = selectedId && String(item.id) === String(selectedId) ? 'selected' : '';
+                html += `<option value="${item.id}" ${selected}>${escapeHtml(item.name)}</option>`;
+            });
+
+            $('#parent_id').html(html).trigger('change');
+        }
+
         function loadDivisions(page = 1) {
             currentPage = page;
 
             $('#divisionsTableBody').html(`
-            <tr>
-                <td colspan="5" class="text-center text-secondary py-5">
-                    Загрузка...
-                </td>
-            </tr>
-        `);
+                <tr>
+                    <td colspan="6" class="text-center text-secondary py-5">
+                        Загрузка...
+                    </td>
+                </tr>
+            `);
 
             $.ajax({
                 url: "{{ route('admin.divisions.list') }}",
@@ -178,6 +199,7 @@
                     search: $('#searchInput').val()
                 },
                 success: function (response) {
+                    divisionOptions = response.division_options || [];
                     renderTable(response.items);
                     renderPagination(response.pagination);
                 },
@@ -192,12 +214,12 @@
 
             if (!items || items.length === 0) {
                 html = `
-                <tr>
-                    <td colspan="5" class="text-center text-secondary py-5">
-                        Подразделения не найдены
-                    </td>
-                </tr>
-            `;
+                    <tr>
+                        <td colspan="6" class="text-center text-secondary py-5">
+                            Подразделения не найдены
+                        </td>
+                    </tr>
+                `;
 
                 $('#divisionsTableBody').html(html);
                 return;
@@ -205,36 +227,40 @@
 
             items.forEach(function (item) {
                 html += `
-                <tr>
-                    <td>${item.id}</td>
+                    <tr>
+                        <td>${item.id}</td>
 
-                    <td>
-                        <div class="fw-semibold">
-                            ${escapeHtml(item.name)}
-                        </div>
-                    </td>
+                        <td>
+                            <div class="fw-semibold">
+                                ${escapeHtml(item.name)}
+                            </div>
+                        </td>
 
-                    <td>
-                        ${item.description ? escapeHtml(item.description) : '<span class="text-secondary">—</span>'}
-                    </td>
+                        <td>
+                            ${item.parent ? escapeHtml(item.parent.name) : '<span class="text-secondary">—</span>'}
+                        </td>
 
-                    <td>
-                        ${formatDate(item.created_at)}
-                    </td>
+                        <td>
+                            ${item.description ? escapeHtml(item.description) : '<span class="text-secondary">—</span>'}
+                        </td>
 
-                    <td class="text-end">
-                        <button class="btn btn-sm btn-outline-info edit-division"
-                                data-id="${item.id}">
-                            <i class="bi bi-pencil"></i>
-                        </button>
+                        <td>
+                            ${formatDate(item.created_at)}
+                        </td>
 
-                        <button class="btn btn-sm btn-outline-danger delete-division"
-                                data-id="${item.id}">
-                            <i class="bi bi-trash"></i>
-                        </button>
-                    </td>
-                </tr>
-            `;
+                        <td class="text-end">
+                            <button class="btn btn-sm btn-outline-info edit-division"
+                                    data-id="${item.id}">
+                                <i class="bi bi-pencil"></i>
+                            </button>
+
+                            <button class="btn btn-sm btn-outline-danger delete-division"
+                                    data-id="${item.id}">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </td>
+                    </tr>
+                `;
             });
 
             $('#divisionsTableBody').html(html);
@@ -262,67 +288,67 @@
             let last = pagination.last_page;
 
             html += `
-            <li class="page-item ${current === 1 ? 'disabled' : ''}">
-                <a class="page-link pagination-page" href="#" data-page="${current - 1}">
-                    Назад
-                </a>
-            </li>
-        `;
+                <li class="page-item ${current === 1 ? 'disabled' : ''}">
+                    <a class="page-link pagination-page" href="#" data-page="${current - 1}">
+                        Назад
+                    </a>
+                </li>
+            `;
 
             let start = Math.max(1, current - 2);
             let end = Math.min(last, current + 2);
 
             if (start > 1) {
                 html += `
-                <li class="page-item">
-                    <a class="page-link pagination-page" href="#" data-page="1">1</a>
-                </li>
-            `;
+                    <li class="page-item">
+                        <a class="page-link pagination-page" href="#" data-page="1">1</a>
+                    </li>
+                `;
 
                 if (start > 2) {
                     html += `
-                    <li class="page-item disabled">
-                        <span class="page-link">...</span>
-                    </li>
-                `;
+                        <li class="page-item disabled">
+                            <span class="page-link">...</span>
+                        </li>
+                    `;
                 }
             }
 
             for (let i = start; i <= end; i++) {
                 html += `
-                <li class="page-item ${i === current ? 'active' : ''}">
-                    <a class="page-link pagination-page" href="#" data-page="${i}">
-                        ${i}
-                    </a>
-                </li>
-            `;
+                    <li class="page-item ${i === current ? 'active' : ''}">
+                        <a class="page-link pagination-page" href="#" data-page="${i}">
+                            ${i}
+                        </a>
+                    </li>
+                `;
             }
 
             if (end < last) {
                 if (end < last - 1) {
                     html += `
-                    <li class="page-item disabled">
-                        <span class="page-link">...</span>
-                    </li>
-                `;
+                        <li class="page-item disabled">
+                            <span class="page-link">...</span>
+                        </li>
+                    `;
                 }
 
                 html += `
-                <li class="page-item">
-                    <a class="page-link pagination-page" href="#" data-page="${last}">
-                        ${last}
-                    </a>
-                </li>
-            `;
+                    <li class="page-item">
+                        <a class="page-link pagination-page" href="#" data-page="${last}">
+                            ${last}
+                        </a>
+                    </li>
+                `;
             }
 
             html += `
-            <li class="page-item ${current === last ? 'disabled' : ''}">
-                <a class="page-link pagination-page" href="#" data-page="${current + 1}">
-                    Вперёд
-                </a>
-            </li>
-        `;
+                <li class="page-item ${current === last ? 'disabled' : ''}">
+                    <a class="page-link pagination-page" href="#" data-page="${current + 1}">
+                        Вперёд
+                    </a>
+                </li>
+            `;
 
             $('#paginationLinks').html(html);
         }
@@ -330,11 +356,11 @@
         function clearForm() {
             $('#divisionForm')[0].reset();
             $('#divisionId').val('');
+            renderParentOptions();
         }
 
         $('#addDivisionBtn').on('click', function () {
             clearForm();
-
             $('#divisionModalTitle').text('Добавить подразделение');
             divisionModal.show();
         });
@@ -343,7 +369,6 @@
             e.preventDefault();
 
             let id = $('#divisionId').val();
-
             let url = id
                 ? "/admin/divisions/" + id
                 : "{{ route('admin.divisions.store') }}";
@@ -375,9 +400,9 @@
                     let division = response.division;
 
                     $('#divisionModalTitle').text('Редактировать подразделение');
-
                     $('#divisionId').val(division.id);
                     $('#name').val(division.name);
+                    renderParentOptions(division.id, division.parent_id);
                     $('#description').val(division.description);
 
                     divisionModal.show();
@@ -440,6 +465,7 @@
             loadDivisions(1);
         });
 
+        renderParentOptions();
         loadDivisions();
     </script>
 @endpush

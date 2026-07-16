@@ -1,18 +1,20 @@
 <?php
-use App\Http\Controllers\Admin\ReportTemplateController;
 use App\Http\Controllers\Admin\AuthController;
-use App\Http\Controllers\Admin\UserController;
-use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\Admin\DivisionController;
+use App\Http\Controllers\Admin\DatabaseMaintenanceController;
 use App\Http\Controllers\Admin\DirectoryController;
+use App\Http\Controllers\Admin\DivisionController;
 use App\Http\Controllers\Admin\JournalTemplateController;
+use App\Http\Controllers\Admin\ReportTemplateController;
+use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Auth\UserAuthController;
+use App\Http\Controllers\User\ChartController;
 use App\Http\Controllers\User\DashboardController;
+use App\Http\Controllers\User\DirectoryController as UserDirectoryController;
 use App\Http\Controllers\User\JournalController;
+use App\Http\Controllers\User\NotificationController;
 use App\Http\Controllers\User\ReportController;
 use App\Http\Controllers\User\ReviewController;
-use App\Http\Controllers\User\NotificationController;
-use App\Http\Controllers\User\ChartController;
+use Illuminate\Support\Facades\Route;
 Route::get('/', function () {
     if (session('user_id')) {
         return redirect()->route('user.dashboard');
@@ -37,13 +39,19 @@ Route::middleware('user.auth')->group(function () {
         ->name('user.journals.entries.store');
 
     Route::get('/journals/{journal}/entries/{entry}', [JournalController::class, 'showEntry'])
+        ->withTrashed()
         ->name('user.journals.entries.show');
 
     Route::post('/journals/{journal}/entries/{entry}', [JournalController::class, 'update'])
         ->name('user.journals.entries.update');
 
     Route::delete('/journals/{journal}/entries/{entry}', [JournalController::class, 'destroy'])
+        ->withTrashed()
         ->name('user.journals.entries.destroy');
+
+    Route::post('/journals/{journal}/entries/{entry}/restore', [JournalController::class, 'restore'])
+        ->withTrashed()
+        ->name('user.journals.entries.restore');
 
 
     Route::post('/journals/{journal}/entries/{entry}/approve', [JournalController::class, 'approve'])
@@ -120,6 +128,24 @@ Route::middleware('user.auth')->group(function () {
     Route::get('/charts/data', [ChartController::class, 'data'])
         ->name('user.charts.data');
 
+    Route::get('/directories', [UserDirectoryController::class, 'index'])
+        ->name('user.directories.index');
+
+    Route::get('/directories/list', [UserDirectoryController::class, 'list'])
+        ->name('user.directories.list');
+
+    Route::get('/directories/{directory}/values', [UserDirectoryController::class, 'valuesList'])
+        ->name('user.directories.values.list');
+
+    Route::post('/directories/{directory}/values', [UserDirectoryController::class, 'storeValue'])
+        ->name('user.directories.values.store');
+
+    Route::post('/directory-values/{value}', [UserDirectoryController::class, 'updateValue'])
+        ->name('user.directory-values.update');
+
+    Route::delete('/directory-values/{value}', [UserDirectoryController::class, 'destroyValue'])
+        ->name('user.directory-values.destroy');
+
 });
 
 
@@ -144,6 +170,9 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('/users/{user}', [UserController::class, 'show'])->name('users.show');
         Route::post('/users/{user}', [UserController::class, 'update'])->name('users.update');
         Route::delete('/users/{user}', [UserController::class, 'destroy'])->name('users.destroy');
+        Route::get('/users/{user}/permissions', [UserController::class, 'permissions'])->name('users.permissions');
+        Route::post('/users/{user}/permissions', [UserController::class, 'storePermission'])->name('users.permissions.store');
+        Route::delete('/users/{user}/permissions/{permission}', [UserController::class, 'destroyPermission'])->name('users.permissions.destroy');
 
 
         Route::get('/directories', [DirectoryController::class, 'index'])->name('directories.index');
@@ -154,6 +183,8 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('/directories/{directory}/values', [DirectoryController::class, 'valuesList'])->name('directories.values.list');
         Route::post('/directories/{directory}/values', [DirectoryController::class, 'valueStore'])->name('directories.values.store');
         Route::post('/directories/{directory}/import-csv', [DirectoryController::class, 'importCsv'])->name('directories.import.csv');
+        Route::get('/directories/{directory}/print', [DirectoryController::class, 'print'])->name('directories.print');
+        Route::get('/directories/{directory}/barcodes', [DirectoryController::class, 'printBarcodes'])->name('directories.barcodes');
 
         Route::get('/directory-values/{value}', [DirectoryController::class, 'valueShow'])->name('directory-values.show');
         Route::post('/directory-values/{value}', [DirectoryController::class, 'valueUpdate'])->name('directory-values.update');
@@ -178,5 +209,8 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('/reports/{report}', [ReportTemplateController::class, 'show'])->name('reports.show');
         Route::post('/reports/{report}', [ReportTemplateController::class, 'update'])->name('reports.update');
         Route::delete('/reports/{report}', [ReportTemplateController::class, 'destroy'])->name('reports.destroy');
+        Route::get('/database', [DatabaseMaintenanceController::class, 'index'])->name('database.index');
+        Route::get('/database/export', [DatabaseMaintenanceController::class, 'export'])->name('database.export');
+        Route::post('/database/import', [DatabaseMaintenanceController::class, 'import'])->name('database.import');
     });
 });

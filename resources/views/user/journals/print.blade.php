@@ -191,7 +191,7 @@
             <th>{{ $field['label'] ?? $field['key'] ?? 'Поле' }}</th>
         @endforeach
 
-        <th>Пользователь</th>
+        <th>Добавил</th>
         <th>Подразделение</th>
         <th>Статус</th>
         <th>Проверил</th>
@@ -219,7 +219,10 @@
                     } elseif ($type === 'directory') {
                         $list = $directoryValues[$field['directory_id'] ?? 0] ?? collect();
                         $directoryItem = $list->firstWhere('id', (int)$value);
-                        $displayValue = $directoryItem ? $directoryItem->value : $value;
+                        $displayField = $field['directory_display_field'] ?? null;
+                        $displayValue = $directoryItem
+                            ? (($displayField && !empty($directoryItem->data[$displayField])) ? $directoryItem->data[$displayField] : $directoryItem->value)
+                            : $value;
                     } else {
                         $displayValue = is_array($value) ? json_encode($value, JSON_UNESCAPED_UNICODE) : $value;
                     }

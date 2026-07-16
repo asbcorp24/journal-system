@@ -9,7 +9,18 @@ class Division extends Model
     protected $fillable = [
         'name',
         'description',
+        'parent_id',
     ];
+
+    public function parent()
+    {
+        return $this->belongsTo(self::class, 'parent_id');
+    }
+
+    public function children()
+    {
+        return $this->hasMany(self::class, 'parent_id');
+    }
 
     public function users()
     {

@@ -11,12 +11,14 @@ class DivisionController extends Controller
 {
     public function index()
     {
-        return view('admin.divisions.index');
+        $divisionOptions = $this->getDivisionOptions();
+
+        return view('admin.divisions.index', compact('divisionOptions'));
     }
 
     public function list(Request $request)
     {
-        $query = Division::query()->orderByDesc('id');
+        $query = Division::with('parent')->orderByDesc('id');
 
         if ($request->filled('search')) {
             $search = trim($request->search);
@@ -32,6 +34,7 @@ class DivisionController extends Controller
         return response()->json([
             'success' => true,
             'items' => $divisions->items(),
+            'division_options' => $this->getDivisionOptions(),
             'pagination' => [
                 'current_page' => $divisions->currentPage(),
                 'last_page' => $divisions->lastPage(),
@@ -56,12 +59,19 @@ class DivisionController extends Controller
                 'nullable',
                 'string',
             ],
+            'parent_id' => [
+                'nullable',
+                'exists:divisions,id',
+            ],
         ]);
+
+        $this->ensureValidParent(null, $validated['parent_id'] ?? null);
 
         $division = Division::create([
             'name' => $validated['name'],
             'description' => $validated['description'] ?? null,
-        ]);
+            'parent_id' => $validated['parent_id'] ?? null,
+        ])->load('parent');
 
         return response()->json([
             'success' => true,
@@ -72,6 +82,8 @@ class DivisionController extends Controller
 
     public function show(Division $division)
     {
+        $division->load('parent');
+
         return response()->json([
             'success' => true,
             'division' => $division,
@@ -91,17 +103,24 @@ class DivisionController extends Controller
                 'nullable',
                 'string',
             ],
+            'parent_id' => [
+                'nullable',
+                'exists:divisions,id',
+            ],
         ]);
+
+        $this->ensureValidParent($division, $validated['parent_id'] ?? null);
 
         $division->update([
             'name' => $validated['name'],
             'description' => $validated['description'] ?? null,
+            'parent_id' => $validated['parent_id'] ?? null,
         ]);
 
         return response()->json([
             'success' => true,
             'message' => 'Подразделение обновлено',
-            'division' => $division,
+            'division' => $division->load('parent'),
         ]);
     }
 
@@ -114,11 +133,55 @@ class DivisionController extends Controller
             ], 422);
         }
 
+        if ($division->children()->exists()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Нельзя удалить подразделение, у него есть дочерние подразделения',
+            ], 422);
+        }
+
         $division->delete();
 
         return response()->json([
             'success' => true,
             'message' => 'Подразделение удалено',
         ]);
+    }
+
+    private function ensureValidParent(?Division $division, $parentId): void
+    {
+        if (!$parentId) {
+            return;
+        }
+
+        if ($division && (int) $division->id === (int) $parentId) {
+            abort(response()->json([
+                'success' => false,
+                'message' => 'Отдел не может быть родителем самого себя',
+            ], 422));
+        }
+
+        if (!$division) {
+            return;
+        }
+
+        $currentParentId = $parentId;
+
+        while ($currentParentId) {
+            if ((int) $currentParentId === (int) $division->id) {
+                abort(response()->json([
+                    'success' => false,
+                    'message' => 'Нельзя выбрать дочерний отдел в качестве родителя',
+                ], 422));
+            }
+
+            $currentParentId = Division::whereKey($currentParentId)->value('parent_id');
+        }
+    }
+
+    private function getDivisionOptions()
+    {
+        return Division::orderBy('name')
+            ->get(['id', 'name', 'parent_id']);
     }
 }

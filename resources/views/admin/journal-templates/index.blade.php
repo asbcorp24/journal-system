@@ -380,7 +380,9 @@
                 label: data?.label || '',
                 type: data?.type || 'string',
                 required: data?.required || false,
+                filterable: data?.filterable || false,
                 directory_id: data?.directory_id || '',
+                directory_display_field: data?.directory_display_field || '',
                 options: data?.options || [],
                 formula: data?.formula || '',
                 validation: data?.validation || {
@@ -430,7 +432,9 @@
                 field.label = $(`${prefix} .field-label`).val();
                 field.type = $(`${prefix} .field-type`).val();
                 field.required = $(`${prefix} .field-required`).is(':checked');
+                field.filterable = $(`${prefix} .field-filterable`).is(':checked');
                 field.directory_id = $(`${prefix} .field-directory`).val();
+                field.directory_display_field = $(`${prefix} .field-directory-display`).val();
                 field.formula = $(`${prefix} .field-formula`).val();
                 field.validation = {
                     min: $(`${prefix} .field-validation-min`).val(),
@@ -462,6 +466,10 @@
 
             fields.forEach(function (field, index) {
                 let directoriesOptions = `<option value="">Выберите справочник</option>`;
+                let displayFieldOptions = `<option value="">Выберите поле</option>`;
+                let selectedDirectory = directories.find(function (directory) {
+                    return String(field.directory_id) === String(directory.id);
+                });
 
                 directories.forEach(function (directory) {
                     let selected = String(field.directory_id) === String(directory.id) ? 'selected' : '';
@@ -472,6 +480,18 @@
                     </option>
                 `;
                 });
+
+                if (selectedDirectory && selectedDirectory.schema && selectedDirectory.schema.length) {
+                    selectedDirectory.schema.forEach(function (directoryField) {
+                        let selected = String(field.directory_display_field) === String(directoryField.key) ? 'selected' : '';
+
+                        displayFieldOptions += `
+                        <option value="${escapeHtml(directoryField.key)}" ${selected}>
+                            ${escapeHtml(directoryField.label)} (${escapeHtml(directoryField.key)})
+                        </option>
+                    `;
+                    });
+                }
 
                 let optionsText = field.options ? field.options.join('\n') : '';
 
@@ -541,13 +561,24 @@
                             </div>
 
                             <div class="col-md-2 d-flex align-items-end">
-                                <div class="form-check form-switch">
-                                    <input class="form-check-input field-required"
-                                           type="checkbox"
-                                           ${field.required ? 'checked' : ''}>
-                                    <label class="form-check-label">
-                                        Обязательное
-                                    </label>
+                                <div class="d-flex flex-column gap-2">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input field-required"
+                                               type="checkbox"
+                                               ${field.required ? 'checked' : ''}>
+                                        <label class="form-check-label">
+                                            Обязательное
+                                        </label>
+                                    </div>
+
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input field-filterable"
+                                               type="checkbox"
+                                               ${field.filterable ? 'checked' : ''}>
+                                        <label class="form-check-label">
+                                            Фильтр
+                                        </label>
+                                    </div>
                                 </div>
                             </div>
 
@@ -555,6 +586,13 @@
                                 <label class="form-label">Справочник</label>
                                 <select class="form-select field-directory">
                                     ${directoriesOptions}
+                                </select>
+                            </div>
+
+                            <div class="col-md-6 field-directory-display-block ${['directory', 'directory_text'].includes(field.type) ? '' : 'd-none'}">
+                                <label class="form-label">Поле для отображения</label>
+                                <select class="form-select field-directory-display">
+                                    ${displayFieldOptions}
                                 </select>
                             </div>
 
@@ -680,11 +718,13 @@
                     key: key,
                     label: label,
                     type: type,
-                    required: card.find('.field-required').is(':checked') ? 1 : 0
+                    required: card.find('.field-required').is(':checked') ? 1 : 0,
+                    filterable: card.find('.field-filterable').is(':checked') ? 1 : 0
                 };
 
                 if (type === 'directory' || type === 'directory_text') {
                     item.directory_id = card.find('.field-directory').val();
+                    item.directory_display_field = card.find('.field-directory-display').val();
                 }
 
                 if (type === 'list') {
@@ -772,7 +812,7 @@
             moveField(uid, direction);
         });
 
-        $(document).on('change', '.field-type', function () {
+        $(document).on('change', '.field-type, .field-directory', function () {
             readFieldsFromDom();
             renderFields();
         });
@@ -782,7 +822,7 @@
             renderFields();
         });
 
-        $(document).on('input change', '.field-label, .field-required, .field-directory, .field-options, .field-formula, .field-validation-min, .field-validation-max, .field-validation-greater, .field-validation-less', function () {
+        $(document).on('input change', '.field-label, .field-required, .field-filterable, .field-directory, .field-directory-display, .field-options, .field-formula, .field-validation-min, .field-validation-max, .field-validation-greater, .field-validation-less', function () {
             updateSchemaPreview();
         });
 

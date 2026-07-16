@@ -9,6 +9,9 @@ use App\Models\Division;
 use App\Models\JournalEntry;
 use App\Models\JournalTemplate;
 use App\Models\User;
+use App\Support\DirectorySchema;
+use App\Support\DivisionTree;
+use App\Support\UserJournalAccess;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use App\Models\JournalEntryComment;
@@ -16,9 +19,222 @@ use App\Models\JournalEntryLog;
 use App\Models\Notification;
 class JournalController extends Controller
 {
+    private function managedDivisionIds(): array
+    {
+        return DivisionTree::managedDivisionIds(session('user_division_id'), session('user_role'));
+    }
+
+    private function canAccessDivision(?int $divisionId): bool
+    {
+        return $divisionId !== null && in_array((int) $divisionId, $this->managedDivisionIds(), true);
+    }
+
+    private function journalAccess(JournalTemplate $journal): array
+    {
+        return UserJournalAccess::resolveForJournal(
+            $journal,
+            session('user_id'),
+            session('user_role'),
+            session('user_division_id')
+        );
+    }
+
+    private function hasExplicitJournalAccessForDivision(array $access, int $divisionId): bool
+    {
+        return (bool) ($access['access_by_division'][$divisionId]['explicit'] ?? false);
+    }
+
+    private function hasFullJournalAccessForDivision(array $access, int $divisionId): bool
+    {
+        return in_array($divisionId, $access['full_division_ids'] ?? [], true);
+    }
+
+    private function canManageJournalDivision(JournalTemplate $journal, ?int $divisionId): bool
+    {
+        if ($divisionId === null) {
+            return false;
+        }
+
+        $access = $this->journalAccess($journal);
+
+        return $this->hasFullJournalAccessForDivision($access, (int) $divisionId);
+    }
+
+    private function defaultWritableDivisionId(array $access): ?int
+    {
+        $ownDivisionId = session('user_division_id');
+
+        if ($ownDivisionId !== null && in_array((int) $ownDivisionId, $access['full_division_ids'], true)) {
+            return (int) $ownDivisionId;
+        }
+
+        return $access['full_division_ids'][0] ?? null;
+    }
+
+    private function applyJournalEntryVisibilityScope($query, JournalTemplate $journal, array $access, $requestedDivisionId = null): void
+    {
+        $role = session('user_role');
+        $ownDivisionId = session('user_division_id');
+        $userId = session('user_id');
+        $accessibleDivisionIds = $access['division_ids'];
+
+        if ($requestedDivisionId !== null && $requestedDivisionId !== '' && in_array((int) $requestedDivisionId, $accessibleDivisionIds, true)) {
+            $accessibleDivisionIds = [(int) $requestedDivisionId];
+        }
+
+        if ($role === 'admin' || $role === 'foreman') {
+            $query->whereIn('division_id', $accessibleDivisionIds);
+            return;
+        }
+
+        if ($role !== 'worker') {
+            $query->whereIn('division_id', $accessibleDivisionIds);
+            return;
+        }
+
+        $explicitAllDivisionIds = array_values(array_filter($accessibleDivisionIds, function ($divisionId) use ($access, $ownDivisionId) {
+            return (int) $divisionId !== (int) $ownDivisionId
+                || $this->hasExplicitJournalAccessForDivision($access, (int) $divisionId);
+        }));
+
+        $includeOwnAsSelfOnly = $ownDivisionId !== null
+            && in_array((int) $ownDivisionId, $accessibleDivisionIds, true)
+            && !$this->hasExplicitJournalAccessForDivision($access, (int) $ownDivisionId);
+
+        $query->where(function ($scope) use ($explicitAllDivisionIds, $includeOwnAsSelfOnly, $ownDivisionId, $userId) {
+            if ($includeOwnAsSelfOnly) {
+                $scope->orWhere(function ($ownQuery) use ($ownDivisionId, $userId) {
+                    $ownQuery->where('division_id', $ownDivisionId)
+                        ->where('user_id', $userId);
+                });
+            }
+
+            if (!empty($explicitAllDivisionIds)) {
+                $scope->orWhereIn('division_id', $explicitAllDivisionIds);
+            }
+        });
+    }
+
+    private function isEntryEditable(JournalTemplate $journal, JournalEntry $entry): bool
+    {
+        try {
+            $this->checkEntryBelongsToJournal($journal, $entry);
+            $this->checkCanUpdateEntry($entry);
+            return true;
+        } catch (\Throwable $e) {
+            return false;
+        }
+    }
+
+    private function isEntryDeletable(JournalTemplate $journal, JournalEntry $entry): bool
+    {
+        try {
+            $this->checkEntryBelongsToJournal($journal, $entry);
+            $this->checkCanDeleteEntry($entry);
+            return true;
+        } catch (\Throwable $e) {
+            return false;
+        }
+    }
+
+    private function canChangeEntryStatus(JournalTemplate $journal, JournalEntry $entry): bool
+    {
+        try {
+            $this->checkEntryBelongsToJournal($journal, $entry);
+            $this->checkCanChangeStatus($entry);
+            return true;
+        } catch (\Throwable $e) {
+            return false;
+        }
+    }
+
+    private function canRestoreEntry(JournalTemplate $journal, JournalEntry $entry): bool
+    {
+        if (!method_exists($entry, 'trashed') || !$entry->trashed()) {
+            return false;
+        }
+
+        if (session('user_role') !== 'admin') {
+            return false;
+        }
+
+        $access = $this->journalAccess($journal);
+
+        return $this->hasFullJournalAccessForDivision($access, (int) $entry->division_id);
+    }
+
+    private function canWriteEntry(JournalTemplate $journal, JournalEntry $entry): bool
+    {
+        return $this->isEntryEditable($journal, $entry) || $this->canChangeEntryStatus($journal, $entry);
+    }
+
+    private function resolveEntryJournal(JournalEntry $entry): JournalTemplate
+    {
+        if ($entry->relationLoaded('template') && $entry->template) {
+            $entry->template->loadMissing('divisions');
+            return $entry->template;
+        }
+
+        return JournalTemplate::with('divisions')->findOrFail($entry->journal_template_id);
+    }
+
+    private function getDirectoryDisplayValue(DirectoryValue $directoryValue, array $field): string
+    {
+        $displayField = $field['directory_display_field'] ?? null;
+
+        if ($displayField && is_array($directoryValue->data ?? null)) {
+            $value = $directoryValue->data[$displayField] ?? null;
+
+            if ($value !== null && $value !== '') {
+                return (string)$value;
+            }
+        }
+
+        return (string)$directoryValue->value;
+    }
+
+    private function applySchemaFilters($query, Request $request, array $schema): void
+    {
+        foreach ($schema as $field) {
+            if (empty($field['filterable'])) {
+                continue;
+            }
+
+            $key = $field['key'] ?? null;
+            $type = $field['type'] ?? 'string';
+
+            if (!$key) {
+                continue;
+            }
+
+            $filterValue = $request->input("field_filters.{$key}");
+
+            if ($filterValue === null || $filterValue === '') {
+                continue;
+            }
+
+            $jsonPath = '$.' . $key;
+
+            if (in_array($type, ['number', 'directory'], true) && is_numeric($filterValue)) {
+                $query->whereRaw('CAST(json_extract(data, ?) AS NUMERIC) = ?', [$jsonPath, $filterValue + 0]);
+                continue;
+            }
+
+            if (in_array($type, ['date', 'time', 'list', 'directory_text'], true)) {
+                $query->whereRaw('json_extract(data, ?) = ?', [$jsonPath, (string)$filterValue]);
+                continue;
+            }
+
+            $query->whereRaw('LOWER(COALESCE(json_extract(data, ?), \'\')) LIKE ?', [
+                $jsonPath,
+                '%' . mb_strtolower((string)$filterValue) . '%',
+            ]);
+        }
+    }
+
     public function show(JournalTemplate $journal)
     {
-        $this->checkJournalAccess($journal);
+        $access = $this->checkJournalAccess($journal);
 
         $journal->load('divisions');
 
@@ -33,6 +249,10 @@ class JournalController extends Controller
             ->unique()
             ->values();
 
+        $directories = Directory::whereIn('id', $directoryIds)
+            ->get()
+            ->keyBy('id');
+
         $directoryValues = DirectoryValue::whereIn('directory_id', $directoryIds)
             ->where('is_active', true)
             ->orderBy('sort_order')
@@ -40,18 +260,49 @@ class JournalController extends Controller
             ->get()
             ->groupBy('directory_id');
 
-        $divisions = Division::orderBy('name')->get();
+        $qrDirectoryIds = $directories
+            ->filter(function (Directory $directory) {
+                return collect($directory->schema ?? [])->contains(function ($field) {
+                    return ($field['type'] ?? null) === 'qr';
+                });
+            })
+            ->keys()
+            ->values();
+
+        $directoryQrValues = DirectoryValue::whereIn('directory_id', $qrDirectoryIds)
+            ->orderBy('sort_order')
+            ->orderBy('value')
+            ->get()
+            ->groupBy('directory_id');
+
+        $divisions = Division::whereIn('id', $access['division_ids'])->orderBy('name')->get();
+        $entryDivisions = Division::whereIn('id', $access['full_division_ids'])->orderBy('name')->get();
+        $canManageJournal = !empty($access['full_division_ids']);
+        $canShowDeleted = session('user_role') === 'admin';
+        $showDivisionFilter = count($access['division_ids']) > 1;
+        $showEntryDivisionSelector = count($access['full_division_ids']) > 1
+            || (
+                count($access['full_division_ids']) === 1
+                && (int) ($access['full_division_ids'][0] ?? 0) !== (int) session('user_division_id')
+            );
 
         return view('user.journals.show', compact(
             'journal',
             'schema',
             'directoryValues',
-            'divisions'
+            'directoryQrValues',
+            'directories',
+            'divisions',
+            'entryDivisions',
+            'canManageJournal',
+            'canShowDeleted',
+            'showDivisionFilter',
+            'showEntryDivisionSelector'
         ));
     }
     public function print(Request $request, JournalTemplate $journal)
     {
-        $this->checkJournalAccess($journal);
+        $access = $this->checkJournalAccess($journal);
 
         $schema = $journal->schema ?? [];
 
@@ -65,26 +316,11 @@ class JournalController extends Controller
             ->orderByDesc('entry_date')
             ->orderByDesc('id');
 
-        $role = session('user_role');
-        $divisionId = session('user_division_id');
-        $userId = session('user_id');
-
-        if ($role === 'worker') {
-            $query->where('division_id', $divisionId)
-                ->where('user_id', $userId);
+        if ($request->boolean('show_deleted')) {
+            $query->onlyTrashed();
         }
 
-        if ($role === 'foreman') {
-            $query->where('division_id', $divisionId);
-        }
-
-        if ($role === 'admin') {
-            if ($request->filled('division_id')) {
-                $query->where('division_id', $request->division_id);
-            } else {
-                $query->where('division_id', $divisionId);
-            }
-        }
+        $this->applyJournalEntryVisibilityScope($query, $journal, $access, $request->input('division_id'));
 
         if ($request->filled('date_from')) {
             $query->whereDate('entry_date', '>=', $request->date_from);
@@ -111,6 +347,8 @@ class JournalController extends Controller
                     });
             });
         }
+
+        $this->applySchemaFilters($query, $request, $schema);
 
         $entries = $query->get();
 
@@ -143,6 +381,14 @@ class JournalController extends Controller
     }
     private function checkCanUpdateEntry(JournalEntry $entry): void
     {
+        $journal = $this->resolveEntryJournal($entry);
+        $access = $this->journalAccess($journal);
+
+        if ($this->hasFullJournalAccessForDivision($access, (int) $entry->division_id)
+            && $this->hasExplicitJournalAccessForDivision($access, (int) $entry->division_id)) {
+            return;
+        }
+
         $role = session('user_role');
         $divisionId = session('user_division_id');
         $userId = session('user_id');
@@ -173,6 +419,10 @@ class JournalController extends Controller
         }
 
         if ($role === 'admin') {
+            if (!$this->canAccessDivision((int) $entry->division_id)) {
+                abort(403, 'РќРµС‚ РґРѕСЃС‚СѓРїР°');
+            }
+
             return;
         }
 
@@ -181,6 +431,14 @@ class JournalController extends Controller
 
     private function checkCanDeleteEntry(JournalEntry $entry): void
     {
+        $journal = $this->resolveEntryJournal($entry);
+        $access = $this->journalAccess($journal);
+
+        if ($this->hasFullJournalAccessForDivision($access, (int) $entry->division_id)
+            && $this->hasExplicitJournalAccessForDivision($access, (int) $entry->division_id)) {
+            return;
+        }
+
         $role = session('user_role');
         $divisionId = session('user_division_id');
         $userId = session('user_id');
@@ -215,6 +473,10 @@ class JournalController extends Controller
         }
 
         if ($role === 'admin') {
+            if (!$this->canAccessDivision((int) $entry->division_id)) {
+                abort(403, 'РќРµС‚ РґРѕСЃС‚СѓРїР°');
+            }
+
             return;
         }
 
@@ -222,7 +484,7 @@ class JournalController extends Controller
     }
     public function list(Request $request, JournalTemplate $journal)
     {
-        $this->checkJournalAccess($journal);
+        $access = $this->checkJournalAccess($journal);
 
         $query = JournalEntry::with([
             'user',
@@ -234,26 +496,11 @@ class JournalController extends Controller
             ->where('journal_template_id', $journal->id)
             ->orderByDesc('id');
 
-        $role = session('user_role');
-        $divisionId = session('user_division_id');
-        $userId = session('user_id');
-
-        if ($role === 'worker') {
-            $query->where('division_id', $divisionId)
-                ->where('user_id', $userId);
+        if ($request->boolean('show_deleted')) {
+            $query->onlyTrashed();
         }
 
-        if ($role === 'foreman') {
-            $query->where('division_id', $divisionId);
-        }
-
-        if ($role === 'admin') {
-            if ($request->filled('division_id')) {
-                $query->where('division_id', $request->division_id);
-            } else {
-                $query->where('division_id', $divisionId);
-            }
-        }
+        $this->applyJournalEntryVisibilityScope($query, $journal, $access, $request->input('division_id'));
 
         if ($request->filled('date_from')) {
             $query->whereDate('entry_date', '>=', $request->date_from);
@@ -281,7 +528,18 @@ class JournalController extends Controller
             });
         }
 
+        $this->applySchemaFilters($query, $request, $journal->schema ?? []);
+
         $entries = $query->paginate(10);
+        $entries->getCollection()->transform(function (JournalEntry $entry) use ($journal) {
+            $entry->can_edit = $this->isEntryEditable($journal, $entry);
+            $entry->can_delete = $this->isEntryDeletable($journal, $entry);
+            $entry->can_change_status = $this->canChangeEntryStatus($journal, $entry);
+            $entry->can_restore = $this->canRestoreEntry($journal, $entry);
+            $entry->can_comment = $this->canWriteEntry($journal, $entry);
+
+            return $entry;
+        });
 
         return response()->json([
             'success' => true,
@@ -299,15 +557,22 @@ class JournalController extends Controller
 
     public function store(Request $request, JournalTemplate $journal)
     {
-        $this->checkJournalAccess($journal);
+        $access = $this->checkJournalAccess($journal);
+
+        if (empty($access['full_division_ids'])) {
+            abort(403, 'Нет прав на заполнение этого журнала');
+        }
 
         $validatedData = $this->validateEntryData($request, $journal);
 
-        $role = session('user_role');
-        $divisionId = session('user_division_id');
+        $divisionId = $this->defaultWritableDivisionId($access);
 
-        if ($role === 'admin' && $request->filled('division_id')) {
-            $divisionId = $request->division_id;
+        if ($request->filled('division_id') && $this->canManageJournalDivision($journal, (int) $request->division_id)) {
+            $divisionId = (int) $request->division_id;
+        }
+
+        if ($divisionId === null) {
+            abort(403, 'Не удалось определить подразделение для записи');
         }
 
         $entryDate = $this->detectEntryDate($validatedData, $request);
@@ -361,7 +626,7 @@ class JournalController extends Controller
 
         $divisionId = $entry->division_id;
 
-        if ($role === 'admin' && $request->filled('division_id')) {
+        if ($role === 'admin' && $request->filled('division_id') && $this->canAccessDivision((int) $request->division_id)) {
             $divisionId = $request->division_id;
         }
 
@@ -444,6 +709,14 @@ class JournalController extends Controller
     }
     private function checkCanChangeStatus(JournalEntry $entry): void
     {
+        $journal = $this->resolveEntryJournal($entry);
+        $access = $this->journalAccess($journal);
+
+        if ($this->hasFullJournalAccessForDivision($access, (int) $entry->division_id)
+            && $this->hasExplicitJournalAccessForDivision($access, (int) $entry->division_id)) {
+            return;
+        }
+
         $role = session('user_role');
         $divisionId = session('user_division_id');
 
@@ -460,6 +733,10 @@ class JournalController extends Controller
         }
 
         if ($role === 'admin') {
+            if (!$this->canAccessDivision((int) $entry->division_id)) {
+                abort(403, 'РќРµС‚ РґРѕСЃС‚СѓРїР°');
+            }
+
             return;
         }
 
@@ -518,27 +795,102 @@ class JournalController extends Controller
         $this->checkEntryBelongsToJournal($journal, $entry);
         $this->checkCanDeleteEntry($entry);
 
+        $oldData = $entry->data;
+        $oldStatus = $entry->status;
+
         $entry->delete();
+
+        $this->writeEntryLog(
+            $entry,
+            'deleted',
+            $oldStatus,
+            $oldStatus,
+            $oldData,
+            $oldData,
+            null,
+            request()
+        );
 
         return response()->json([
             'success' => true,
             'message' => 'Запись удалена',
         ]);
     }
+    public function restore(JournalTemplate $journal, JournalEntry $entry)
+    {
+        $this->checkJournalAccess($journal);
+        $this->checkEntryBelongsToJournal($journal, $entry);
+
+        if (session('user_role') !== 'admin') {
+            abort(403, 'РќРµС‚ РґРѕСЃС‚СѓРїР°');
+        }
+
+        if (!$this->canAccessDivision((int) $entry->division_id)) {
+            abort(403, 'РќРµС‚ РґРѕСЃС‚СѓРїР°');
+        }
+
+        if (!$entry->trashed()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Запись уже активна',
+            ]);
+        }
+
+        $oldData = $entry->data;
+        $oldStatus = $entry->status;
+
+        $entry->restore();
+
+        $this->writeEntryLog(
+            $entry,
+            'restored',
+            $oldStatus,
+            $oldStatus,
+            $oldData,
+            $oldData,
+            null,
+            request()
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Запись восстановлена',
+        ]);
+    }
+
     public function storeDirectoryValue(Request $request, JournalTemplate $journal, Directory $directory)
     {
         $this->checkJournalAccess($journal);
         $this->checkCanManageDirectoryValues($journal, $directory);
 
-        $validated = $request->validate([
-            'value' => [
-                'required',
-                'string',
-                'max:255',
-            ],
-        ]);
+        $schema = $directory->schema ?? [];
 
-        $value = trim($validated['value']);
+        if (empty($schema)) {
+            $validated = $request->validate([
+                'value' => ['required', 'string', 'max:255'],
+            ]);
+
+            $value = trim($validated['value']);
+            $recordData = null;
+        } else {
+            $recordData = $request->input('data');
+
+            if (!is_array($recordData) && $request->filled('value')) {
+                $recordData = DirectorySchema::buildDataFromLegacyValue($schema, trim((string)$request->input('value')));
+            }
+
+            $request->merge([
+                'data' => $recordData,
+            ]);
+
+            $request->validate([
+                'data' => ['required', 'array'],
+            ]);
+
+            $recordData = DirectorySchema::validateRecord($schema, $recordData);
+            DirectorySchema::validateUniqueFields($schema, $recordData, $directory->values()->get(['id', 'data']));
+            $value = DirectorySchema::resolveDisplayValue($schema, $recordData);
+        }
 
         $existingValue = DirectoryValue::query()
             ->where('directory_id', $directory->id)
@@ -555,6 +907,7 @@ class JournalController extends Controller
 
         $newValue = $directory->values()->create([
             'value' => $value,
+            'data' => $recordData,
             'sort_order' => 0,
             'is_active' => true,
         ]);
@@ -581,14 +934,32 @@ class JournalController extends Controller
             'logs' => $logs,
         ]);
     }
-    private function checkJournalAccess(JournalTemplate $journal): void
+    private function checkJournalAccess(JournalTemplate $journal): array
     {
+        $access = $this->journalAccess($journal);
+
+        if (!$journal->is_active) {
+            abort(404);
+        }
+
+        if ($access['can_view']) {
+            return $access;
+        }
+
         if (!$journal->is_active) {
             abort(404);
         }
 
         if (session('user_role') === 'admin') {
-            return;
+            $hasAccess = $journal->divisions()
+                ->whereIn('divisions.id', $this->managedDivisionIds())
+                ->exists();
+
+            if (!$hasAccess) {
+                abort(403, 'РќРµС‚ РґРѕСЃС‚СѓРїР° Рє СЌС‚РѕРјСѓ Р¶СѓСЂРЅР°Р»Сѓ');
+            }
+
+            return $access;
         }
 
         $divisionId = session('user_division_id');
@@ -600,6 +971,8 @@ class JournalController extends Controller
         if (!$hasAccess) {
             abort(403, 'Нет доступа к этому журналу');
         }
+
+        return $access;
     }
 
     private function checkEntryBelongsToJournal(JournalTemplate $journal, JournalEntry $entry): void
@@ -633,14 +1006,17 @@ class JournalController extends Controller
             abort(403, 'РќРµС‚ РґРѕСЃС‚СѓРїР° Рє СЌС‚РѕРјСѓ СЃРїСЂР°РІРѕС‡РЅРёРєСѓ');
         }
 
-        if ($role === 'admin') {
-            return;
+        $divisionId = session('user_division_id');
+        $managedDivisionIds = $this->managedDivisionIds();
+
+        if ($role === 'admin' && empty($managedDivisionIds)) {
+            abort(403, 'Р СњР ВµРЎвЂљ Р Т‘Р С•РЎРѓРЎвЂљРЎС“Р С—Р В°');
         }
 
-        $divisionId = session('user_division_id');
-
         $hasDivisionAccess = !$directory->divisions()->exists()
-            || $directory->divisions()->where('divisions.id', $divisionId)->exists();
+            || (!empty($managedDivisionIds)
+                ? $directory->divisions()->whereIn('divisions.id', $managedDivisionIds)->exists()
+                : $directory->divisions()->where('divisions.id', $divisionId)->exists());
 
         if (!$hasDivisionAccess) {
             abort(403, 'РќРµС‚ РґРѕСЃС‚СѓРїР° Рє СЌС‚РѕРјСѓ СЃРїСЂР°РІРѕС‡РЅРёРєСѓ');
@@ -674,6 +1050,10 @@ class JournalController extends Controller
         }
 
         if ($role === 'admin') {
+            if (!$this->canAccessDivision((int) $entry->division_id)) {
+                abort(403, 'РќРµС‚ РґРѕСЃС‚СѓРїР°');
+            }
+
             return;
         }
 
@@ -782,7 +1162,7 @@ class JournalController extends Controller
                     ], 422));
                 }
 
-                $result[$key] = $directoryValue->value;
+                $result[$key] = $this->getDirectoryDisplayValue($directoryValue, $field);
                 continue;
             }
 
@@ -983,6 +1363,10 @@ class JournalController extends Controller
         $this->checkEntryBelongsToJournal($journal, $entry);
         $this->checkCanViewEntry($entry);
 
+        if (!$this->canWriteEntry($journal, $entry)) {
+            abort(403, 'Нет прав на изменение этого журнала');
+        }
+
         $request->validate([
             'comment' => 'required|string|max:5000',
             'parent_id' => 'nullable|exists:journal_entry_comments,id',
@@ -1064,6 +1448,11 @@ class JournalController extends Controller
         $this->checkJournalAccess($journal);
         $this->checkEntryBelongsToJournal($journal, $entry);
         $this->checkCanViewEntry($entry);
+
+        if (!$this->canWriteEntry($journal, $entry)) {
+            abort(403, 'Нет прав на изменение этого журнала');
+        }
+
         $this->checkCommentBelongsToEntry($entry, $comment);
         $this->checkCanEditComment($entry, $comment);
 
@@ -1107,6 +1496,18 @@ class JournalController extends Controller
 
     private function checkCanViewEntry(JournalEntry $entry): void
     {
+        $journal = $this->resolveEntryJournal($entry);
+        $access = $this->journalAccess($journal);
+        $entryDivisionId = (int) $entry->division_id;
+
+        if (!in_array($entryDivisionId, $access['division_ids'], true)) {
+            abort(403, 'Нет доступа к записи этого подразделения');
+        }
+
+        if ($this->hasExplicitJournalAccessForDivision($access, $entryDivisionId)) {
+            return;
+        }
+
         $role = session('user_role');
         $divisionId = session('user_division_id');
         $userId = session('user_id');
@@ -1132,6 +1533,10 @@ class JournalController extends Controller
         }
 
         if ($role === 'admin') {
+            if (!$this->canAccessDivision((int) $entry->division_id)) {
+                abort(403, 'РќРµС‚ РґРѕСЃС‚СѓРїР°');
+            }
+
             return;
         }
 
@@ -1147,6 +1552,14 @@ class JournalController extends Controller
 
     private function checkCanEditComment(JournalEntry $entry, JournalEntryComment $comment): void
     {
+        $journal = $this->resolveEntryJournal($entry);
+        $access = $this->journalAccess($journal);
+
+        if ($this->hasFullJournalAccessForDivision($access, (int) $entry->division_id)
+            && $this->hasExplicitJournalAccessForDivision($access, (int) $entry->division_id)) {
+            return;
+        }
+
         $role = session('user_role');
         $divisionId = session('user_division_id');
         $userId = session('user_id');
@@ -1172,6 +1585,10 @@ class JournalController extends Controller
         }
 
         if ($role === 'admin') {
+            if (!$this->canAccessDivision((int) $entry->division_id)) {
+                abort(403, 'РќРµС‚ РґРѕСЃС‚СѓРїР°');
+            }
+
             return;
         }
 
@@ -1255,10 +1672,21 @@ class JournalController extends Controller
 
     private function getForemenAndAdminsForDivision(?int $divisionId)
     {
+        $ancestorDivisionIds = DivisionTree::ancestorAndSelfIds($divisionId);
+
         return User::query()
             ->where('is_active', true)
-            ->whereIn('role', ['foreman', 'admin'])
-            ->where('division_id', $divisionId)
+            ->where(function ($query) use ($divisionId, $ancestorDivisionIds) {
+                $query->where(function ($roleQuery) use ($divisionId) {
+                    $roleQuery->where('role', 'foreman')
+                        ->where('division_id', $divisionId);
+                });
+
+                $query->orWhere(function ($roleQuery) use ($ancestorDivisionIds) {
+                    $roleQuery->where('role', 'admin')
+                        ->whereIn('division_id', $ancestorDivisionIds);
+                });
+            })
             ->get();
     }
 

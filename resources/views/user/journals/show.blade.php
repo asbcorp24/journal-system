@@ -4,7 +4,7 @@
 
 @section('content')
 
-    <div class="d-flex justify-content-between align-items-center mb-4">
+    <div class="d-flex justify-content-between align-items-center mb-4" id="journalHeaderBar">
         <div>
             <div class="mb-2">
                 <a href="{{ route('user.dashboard') }}" class="btn btn-outline-light btn-sm">
@@ -22,19 +22,24 @@
             </div>
         </div>
 
-        <div class="d-flex gap-2">
+        <div class="d-flex gap-2" id="journalActionButtons">
+            <button class="btn btn-outline-info" id="toggleJournalFullscreenBtn">
+                <i class="bi bi-arrows-fullscreen"></i>
+                На весь экран
+            </button>
             <button class="btn btn-outline-light" id="printJournalBtn">
                 <i class="bi bi-printer"></i>
                 Печать
             </button>
 
-            <button class="btn btn-primary" id="addEntryBtn">
+            <button class="btn btn-primary{{ $canManageJournal ? '' : ' d-none' }}" id="addEntryBtn">
                 <i class="bi bi-plus-lg"></i>
                 Добавить запись
             </button>
         </div>
     </div>
 
+    <div id="journalWorkspace">
     <div class="card mb-4">
         <div class="card-body">
             <div class="row g-3">
@@ -57,7 +62,7 @@
                         <option value="rejected">Отклонено</option>
                     </select>
                 </div>
-                @if(session('user_role') === 'admin')
+                @if($showDivisionFilter)
                     <div class="col-md-3">
                         <label class="form-label">Подразделение</label>
                         <select id="divisionFilter" class="form-select">
@@ -71,12 +76,23 @@
                     </div>
                 @endif
 
+                <div class="col-12">
+                    <div id="fieldFiltersContainer" class="row g-3"></div>
+                </div>
+
                 <div class="col-md-3">
                     <label class="form-label">Поиск</label>
                     <input type="text"
                            id="searchInput"
                            class="form-control"
                            placeholder="Поиск по данным">
+                </div>
+
+                <div class="col-md-3 d-flex align-items-end">
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" id="showDeletedFilter">
+                        <label class="form-check-label" for="showDeletedFilter">Показать удалённые</label>
+                    </div>
                 </div>
 
                 <div class="col-md-2">
@@ -119,13 +135,21 @@
         </div>
     </div>
 
+    </div>
+
     <div class="modal fade" id="entryModal" tabindex="-1">
-        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable" id="entryModalDialog">
             <form class="modal-content" id="entryForm">
                 <div class="modal-header">
                     <h5 class="modal-title" id="entryModalTitle">
                         Добавить запись
                     </h5>
+
+                    <button type="button"
+                            class="btn btn-outline-light btn-sm me-2"
+                            id="toggleEntryModalFullscreenBtn">
+                        <i class="bi bi-arrows-fullscreen"></i>
+                    </button>
 
                     <button type="button"
                             class="btn-close btn-close-white"
@@ -135,12 +159,12 @@
                 <div class="modal-body">
                     <input type="hidden" id="entryId">
 
-                    @if(session('user_role') === 'admin')
+                    @if($showEntryDivisionSelector)
                         <div class="mb-3">
                             <label class="form-label">Подразделение</label>
                             <select id="entryDivisionId" class="form-select">
                                 <option value="">Не выбрано</option>
-                                @foreach($divisions as $division)
+                                @foreach($entryDivisions as $division)
                                     <option value="{{ $division->id }}">
                                         {{ $division->name }}
                                     </option>
@@ -187,13 +211,7 @@
                 <div class="modal-body">
                     <input type="hidden" id="directoryValueFieldKey">
                     <input type="hidden" id="directoryValueDirectoryId">
-
-                    <label class="form-label" for="directoryValueInput">Value</label>
-                    <input type="text"
-                           class="form-control"
-                           id="directoryValueInput"
-                           maxlength="255"
-                           required>
+                    <div id="directoryValueFields"></div>
                 </div>
 
                 <div class="modal-footer">
@@ -283,17 +301,79 @@
     </div>
 @endsection
 
+@push('styles')
+    <style>
+        #journalWorkspace.journal-fullscreen {
+            position: fixed;
+            inset: 12px;
+            z-index: 1040;
+            overflow: auto;
+            background: #0f172a;
+            padding: 12px;
+            border-radius: 16px;
+        }
+
+        #journalWorkspace.journal-fullscreen .card {
+            margin-bottom: 16px !important;
+        }
+
+        body.journal-fullscreen-active {
+            overflow: hidden;
+        }
+
+        body.journal-fullscreen-active #journalHeaderBar {
+            position: fixed;
+            top: 12px;
+            left: 24px;
+            right: 24px;
+            z-index: 1041;
+            padding: 12px 16px;
+            border-radius: 16px;
+            background: rgba(15, 23, 42, 0.96);
+            backdrop-filter: blur(8px);
+        }
+
+        body.journal-fullscreen-active #journalWorkspace.journal-fullscreen {
+            inset: 108px 12px 12px;
+        }
+
+        body.journal-fullscreen-active #journalActionButtons {
+            flex-wrap: wrap;
+        }
+
+        #entryModalDialog.modal-dialog-fullscreen {
+            max-width: none;
+            width: calc(100vw - 1rem);
+            height: calc(100vh - 1rem);
+            margin: .5rem;
+        }
+
+        #entryModalDialog.modal-dialog-fullscreen .modal-content {
+            height: 100%;
+        }
+
+        #entryModalDialog.modal-dialog-fullscreen .modal-body {
+            overflow-y: auto;
+        }
+    </style>
+@endpush
+
 @push('scripts')
     <script>
         const journalId = {{ $journal->id }};
         const schema = @json($schema);
         const directoryValues = @json($directoryValues);
+        const directoryQrValues = @json($directoryQrValues);
+        const directoryDefinitions = @json($directories);
         const userRole = "{{ session('user_role') }}";
+        const canManageJournal = @json($canManageJournal);
         const canManageDirectoryValues = userRole !== 'worker';
 
         let entryModal = new bootstrap.Modal(document.getElementById('entryModal'));
         let directoryValueModal = new bootstrap.Modal(document.getElementById('directoryValueModal'));
         let currentPage = 1;
+        let journalFullscreen = false;
+        let entryModalFullscreen = false;
 
         function statusBadge(status) {
             if (status === 'approved') {
@@ -307,12 +387,84 @@
             return '<span class="badge bg-warning text-dark">На проверке</span>';
         }
 
+        function statusBadge(status) {
+            if (status === 'approved') {
+                return '<span class="badge bg-success" title="Подтверждено">OK</span>';
+            }
+
+            if (status === 'rejected') {
+                return '<span class="badge bg-danger" title="Отклонено">!</span>';
+            }
+
+            return '<span class="badge bg-warning text-dark" title="На проверке">...</span>';
+        }
+
+        function compactChecker(entry) {
+            if (!entry.checker) {
+                return '<span class="text-secondary" title="Не проверено">—</span>';
+            }
+
+            let title = entry.checker.name || '';
+
+            if (entry.checked_at) {
+                title += ' / ' + entry.checked_at;
+            }
+
+            return `<span class="badge bg-secondary" title="${escapeHtml(title)}">✓</span>`;
+        }
+
+        function compactComment(entry) {
+            if (!entry.last_comment) {
+                return '<span class="text-secondary" title="Комментария нет">—</span>';
+            }
+
+            let title = entry.last_comment.comment || '';
+
+            if (entry.last_comment.user && entry.last_comment.user.name) {
+                title += ' / ' + entry.last_comment.user.name;
+            }
+
+            if (entry.last_comment.created_at) {
+                title += ' / ' + entry.last_comment.created_at;
+            }
+
+            return `<span class="badge bg-info text-dark" title="${escapeHtml(title)}">...</span>`;
+        }
+
+        function updateJournalFullscreenButton() {
+            $('#toggleJournalFullscreenBtn').html(journalFullscreen
+                ? '<i class="bi bi-fullscreen-exit"></i> Свернуть'
+                : '<i class="bi bi-arrows-fullscreen"></i> На весь экран');
+        }
+
+        function updateEntryModalFullscreenButton() {
+            $('#toggleEntryModalFullscreenBtn').html(entryModalFullscreen
+                ? '<i class="bi bi-fullscreen-exit"></i>'
+                : '<i class="bi bi-arrows-fullscreen"></i>');
+        }
+
         function getFieldLabel(key) {
             let field = schema.find(item => item.key === key);
             return field ? field.label : key;
         }
 
-        function getDirectoryText(directoryId, valueId) {
+        function getDirectoryOptionLabel(field, item) {
+            if (!item) {
+                return '';
+            }
+
+            let displayField = field.directory_display_field || '';
+
+            if (displayField && item.data && item.data[displayField] !== undefined && item.data[displayField] !== null && item.data[displayField] !== '') {
+                return item.data[displayField];
+            }
+
+            return item.value || '';
+        }
+
+        function getDirectoryText(field, valueId) {
+            let directoryId = field.directory_id;
+
             if (!directoryId || !valueId) {
                 return '';
             }
@@ -323,7 +475,7 @@
                 return String(value.id) === String(valueId);
             });
 
-            return item ? item.value : valueId;
+            return item ? getDirectoryOptionLabel(field, item) : valueId;
         }
 
         function upsertDirectoryValue(directoryId, item) {
@@ -353,13 +505,129 @@
             });
         }
 
+        function getDirectoryDefinition(directoryId) {
+            return directoryDefinitions[directoryId] || null;
+        }
+
+        function getDirectoryQrKey(field) {
+            let directory = getDirectoryDefinition(field.directory_id);
+            let directorySchema = directory && Array.isArray(directory.schema) ? directory.schema : [];
+            let qrField = directorySchema.find(function (item) {
+                return item.type === 'qr';
+            });
+
+            return qrField ? qrField.key : null;
+        }
+
+        function findDirectoryValueByQr(field, scannedValue) {
+            let qrKey = getDirectoryQrKey(field);
+            let needle = String(scannedValue || '').trim();
+
+            if (!qrKey || !needle) {
+                return null;
+            }
+
+            return (directoryQrValues[field.directory_id] || directoryValues[field.directory_id] || []).find(function (item) {
+                let data = item.data || {};
+
+                return String(data[qrKey] || '').trim() === needle;
+            }) || null;
+        }
+
+        function generateQrClientValue() {
+            return 'QR-' + new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14)
+                + '-' + Math.random().toString(36).slice(2, 8).toUpperCase();
+        }
+
+        function renderDirectoryValueModalForm(directoryId, data = {}) {
+            let directory = getDirectoryDefinition(directoryId);
+            let schema = directory && Array.isArray(directory.schema) ? directory.schema : [];
+            let html = '';
+
+            if (!schema.length) {
+                html = `
+                    <label class="form-label" for="directoryValueInput">Значение</label>
+                    <input type="text"
+                           class="form-control"
+                           id="directoryValueInput"
+                           maxlength="255"
+                           value="${escapeHtml(data.value || '')}"
+                           required>
+                `;
+
+                $('#directoryValueFields').html(html);
+                return;
+            }
+
+            schema.forEach(function (field) {
+                let value = data[field.key] ?? '';
+                let required = field.required ? 'required' : '';
+                let requiredMark = field.required ? '<span class="text-danger">*</span>' : '';
+
+                html += `<div class="mb-3">`;
+                html += `<label class="form-label">${escapeHtml(field.label)} ${requiredMark}</label>`;
+
+                if (field.type === 'number') {
+                    html += `<input type="number" step="any" class="form-control directory-value-field" data-key="${field.key}" value="${escapeHtml(value)}" ${required}>`;
+                } else if (field.type === 'date') {
+                    html += `<input type="date" class="form-control directory-value-field" data-key="${field.key}" value="${escapeHtml(value)}" ${required}>`;
+                } else if (field.type === 'time') {
+                    html += `<input type="time" class="form-control directory-value-field" data-key="${field.key}" value="${escapeHtml(String(value || '').substring(0, 5))}" ${required}>`;
+                } else if (field.type === 'qr') {
+                    let qrRequired = field.auto_generate ? '' : required;
+                    let placeholder = field.auto_generate ? 'Оставьте пустым для автогенерации' : 'Введите QR/штрихкод';
+                    html += `
+                        <div class="input-group">
+                            <input type="text" class="form-control directory-value-field" data-key="${field.key}" value="${escapeHtml(value)}" placeholder="${placeholder}" ${qrRequired}>
+                            <button type="button" class="btn btn-outline-info generate-directory-qr-value">Сгенерировать</button>
+                        </div>
+                    `;
+                } else if (field.type === 'list') {
+                    html += `<select class="form-select directory-value-field" data-key="${field.key}" ${required}>`;
+                    html += `<option value="">Выберите значение</option>`;
+
+                    (field.options || []).forEach(function (option) {
+                        let selected = String(value) === String(option) ? 'selected' : '';
+                        html += `<option value="${escapeHtml(option)}" ${selected}>${escapeHtml(option)}</option>`;
+                    });
+
+                    html += `</select>`;
+                } else {
+                    html += `<input type="text" class="form-control directory-value-field" data-key="${field.key}" value="${escapeHtml(value)}" ${required}>`;
+                }
+
+                html += `</div>`;
+            });
+
+            $('#directoryValueFields').html(html);
+        }
+
+        function collectDirectoryValueData(directoryId) {
+            let directory = getDirectoryDefinition(directoryId);
+            let schema = directory && Array.isArray(directory.schema) ? directory.schema : [];
+
+            if (!schema.length) {
+                return {
+                    value: ($('#directoryValueInput').val() || '').trim()
+                };
+            }
+
+            let data = {};
+
+            $('.directory-value-field').each(function () {
+                data[$(this).data('key')] = $(this).val();
+            });
+
+            return { data };
+        }
+
         function formatValue(field, value) {
             if (value === null || value === undefined || value === '') {
                 return '<span class="text-secondary">—</span>';
             }
 
             if (field.type === 'directory') {
-                return escapeHtml(getDirectoryText(field.directory_id, value));
+                return escapeHtml(getDirectoryText(field, value));
             }
 
             if (field.type === 'directory_text') {
@@ -373,6 +641,80 @@
             return escapeHtml(value);
         }
 
+        function getFilterableFields() {
+            return schema.filter(function (field) {
+                return !!field.filterable;
+            });
+        }
+
+        function renderFieldFilters() {
+            let fields = getFilterableFields();
+            let html = '';
+
+            fields.forEach(function (field) {
+                html += `<div class="col-md-3">`;
+                html += `<label class="form-label">${escapeHtml(field.label)}</label>`;
+
+                if (field.type === 'date') {
+                    html += `<input type="date" class="form-control journal-field-filter" data-key="${field.key}">`;
+                } else if (field.type === 'time') {
+                    html += `<input type="time" class="form-control journal-field-filter" data-key="${field.key}">`;
+                } else if (field.type === 'number') {
+                    html += `<input type="number" step="any" class="form-control journal-field-filter" data-key="${field.key}" placeholder="Введите значение">`;
+                } else if (field.type === 'list') {
+                    html += `<select class="form-select journal-field-filter" data-key="${field.key}"><option value="">Все</option>`;
+
+                    (field.options || []).forEach(function (option) {
+                        html += `<option value="${escapeHtml(option)}">${escapeHtml(option)}</option>`;
+                    });
+
+                    html += `</select>`;
+                } else if (field.type === 'directory') {
+                    html += `<select class="form-select journal-field-filter" data-key="${field.key}"><option value="">Все</option>`;
+
+                    (directoryValues[field.directory_id] || []).forEach(function (item) {
+                        html += `<option value="${item.id}">${escapeHtml(getDirectoryOptionLabel(field, item))}</option>`;
+                    });
+
+                    html += `</select>`;
+                } else if (field.type === 'directory_text') {
+                    html += `<select class="form-select journal-field-filter" data-key="${field.key}"><option value="">Все</option>`;
+
+                    (directoryValues[field.directory_id] || []).forEach(function (item) {
+                        let label = getDirectoryOptionLabel(field, item);
+                        html += `<option value="${escapeHtml(label)}">${escapeHtml(label)}</option>`;
+                    });
+
+                    html += `</select>`;
+                } else {
+                    html += `<input type="text" class="form-control journal-field-filter" data-key="${field.key}" placeholder="Поиск по полю">`;
+                }
+
+                html += `</div>`;
+            });
+
+            $('#fieldFiltersContainer').html(html);
+
+            if (document.getElementById('fieldFiltersContainer')) {
+                initSearchableSelects(document.getElementById('fieldFiltersContainer'));
+            }
+        }
+
+        function collectFieldFilters() {
+            let filters = {};
+
+            $('.journal-field-filter').each(function () {
+                let key = $(this).data('key');
+                let value = $(this).val();
+
+                if (value !== null && value !== '') {
+                    filters[key] = value;
+                }
+            });
+
+            return filters;
+        }
+
         function renderTableHead() {
             let html = `
             <th style="width:80px;">ID</th>
@@ -384,7 +726,7 @@
             });
 
             html += `
-            <th>Пользователь</th>
+            <th>Добавил</th>
             <th>Подразделение</th>
             <th>Статус</th>
   <th>Проверил</th>
@@ -393,6 +735,60 @@
         `;
 
             $('#entriesTableHead').html(html);
+            compactTailHeaders();
+        }
+
+        function compactTailHeaders() {
+            let headers = $('#entriesTableHead th');
+            let statusHeader = headers.eq(headers.length - 4);
+            let checkerHeader = headers.eq(headers.length - 3);
+            let commentHeader = headers.eq(headers.length - 2);
+
+            statusHeader.attr('title', 'Статус').text('Ст.').css({width: '58px'});
+            checkerHeader.attr('title', 'Проверил').text('Пр.').css({width: '58px'});
+            commentHeader.attr('title', 'Комментарий').text('Ком.').css({width: '58px'});
+        }
+
+        function compactTailCells() {
+            $('#entriesTableBody tr').each(function () {
+                let cells = $(this).children('td');
+
+                if (cells.length < 4) {
+                    return;
+                }
+
+                let statusCell = cells.eq(cells.length - 4);
+                let checkerCell = cells.eq(cells.length - 3);
+                let commentCell = cells.eq(cells.length - 2);
+
+                let statusTitle = statusCell.text().trim();
+                let checkerTitle = checkerCell.text().replace(/\s+/g, ' ').trim();
+                let commentTitle = commentCell.text().replace(/\s+/g, ' ').trim();
+
+                statusCell.addClass('text-center').attr('title', statusTitle || 'Статус').css({width: '58px'});
+                checkerCell.addClass('text-center').attr('title', checkerTitle || 'Не проверено').css({width: '58px'});
+                commentCell.addClass('text-center').attr('title', commentTitle || 'Комментария нет').css({width: '58px'});
+
+                if (statusCell.find('.bg-success').length) {
+                    statusCell.html('<span class="badge bg-success">OK</span>');
+                } else if (statusCell.find('.bg-danger').length) {
+                    statusCell.html('<span class="badge bg-danger">!</span>');
+                } else if (statusCell.find('.bg-warning').length) {
+                    statusCell.html('<span class="badge bg-warning text-dark">...</span>');
+                }
+
+                if (checkerTitle && checkerTitle !== '—' && checkerTitle !== 'вЂ”') {
+                    checkerCell.html('<span class="badge bg-secondary">✓</span>');
+                } else {
+                    checkerCell.html('<span class="text-secondary">—</span>');
+                }
+
+                if (commentTitle && commentTitle !== '—' && commentTitle !== 'вЂ”') {
+                    commentCell.html('<span class="badge bg-info text-dark">...</span>');
+                } else {
+                    commentCell.html('<span class="text-secondary">—</span>');
+                }
+            });
         }
 
         function loadEntries(page = 1) {
@@ -414,8 +810,10 @@
                     date_from: $('#dateFrom').val(),
                     date_to: $('#dateTo').val(),
                     status: $('#statusFilter').val(),
+                    show_deleted: $('#showDeletedFilter').is(':checked') ? 1 : 0,
                     search: $('#searchInput').val(),
-                    division_id: $('#divisionFilter').length ? $('#divisionFilter').val() : ''
+                    division_id: $('#divisionFilter').length ? $('#divisionFilter').val() : '',
+                    field_filters: collectFieldFilters()
                 },
                 success: function (response) {
                     renderEntries(response.items);
@@ -432,7 +830,7 @@
 
             if (!items || items.length === 0) {
                 $('#entriesTableBody').html(`
-                <tr>
+                <tr class="${entry.deleted_at ? 'table-danger' : ''}">
                     <td colspan="${schema.length + 6}" class="text-center text-secondary py-5">
                         Записи не найдены
                     </td>
@@ -457,7 +855,7 @@
                 html += `
                     <td>${entry.user ? escapeHtml(entry.user.name) : '—'}</td>
                     <td>${entry.division ? escapeHtml(entry.division.name) : '—'}</td>
-             <td>${statusBadge(entry.status)}</td>
+             <td>${entry.deleted_at ? '<span class="badge bg-danger">Удалена</span>' : statusBadge(entry.status)}</td>
 
 <td>
     ${entry.checker ? escapeHtml(entry.checker.name) : '<span class="text-secondary">—</span>'}
@@ -485,9 +883,10 @@
             });
 
             $('#entriesTableBody').html(html);
+            compactTailCells();
         }
         function canChangeStatusButtons(entry) {
-            if (userRole === 'worker') {
+            if (!entry.can_change_status) {
                 return '';
             }
 
@@ -665,17 +1064,28 @@
                         if (field.type === 'directory') {
                             selected = String(value) === String(item.id) ? 'selected' : '';
                         } else {
-                            selected = String(value) === String(item.value) ? 'selected' : '';
+                            selected = String(value) === String(getDirectoryOptionLabel(field, item)) ? 'selected' : '';
                         }
 
                         html += `
                         <option value="${item.id}" ${selected}>
-                            ${escapeHtml(item.value)}
+                            ${escapeHtml(getDirectoryOptionLabel(field, item))}
                         </option>
                     `;
                     });
 
                     html += `</select>`;
+
+                    if (getDirectoryQrKey(field)) {
+                        html += `
+                        <button type="button"
+                                class="btn btn-outline-info scan-directory-value-btn"
+                                data-field-key="${field.key}"
+                                title="Сканировать QR/штрихкод">
+                            <i class="bi bi-upc-scan"></i>
+                        </button>
+                    `;
+                    }
 
                     if (canManageDirectoryValues) {
                         html += `
@@ -746,6 +1156,18 @@
             }
             $('#changeComment').val('');
             renderDynamicForm({});
+            setEntryFormReadonly(false);
+        }
+
+        function setEntryFormReadonly(readonly) {
+            $('#dynamicForm').find('input, select, textarea, button').prop('disabled', readonly);
+            $('#changeComment').prop('disabled', readonly);
+
+            if ($('#entryDivisionId').length) {
+                $('#entryDivisionId').prop('disabled', readonly);
+            }
+
+            $('#entryForm button[type="submit"]').toggleClass('d-none', readonly);
         }
 
         $('#addEntryBtn').on('click', function () {
@@ -807,6 +1229,35 @@
                     }
 
                     renderDynamicForm(entry.data || {});
+                    setEntryFormReadonly(false);
+                    entryModal.show();
+                },
+                error: function (xhr) {
+                    showAjaxErrors(xhr);
+                }
+            });
+        });
+
+        $(document).on('click', '.view-entry', function () {
+            let id = $(this).data('id');
+
+            clearEntryForm();
+
+            $.ajax({
+                url: `/journals/${journalId}/entries/${id}`,
+                method: "GET",
+                success: function (response) {
+                    let entry = response.entry;
+
+                    $('#entryModalTitle').text('Просмотр удалённой записи');
+                    $('#entryId').val(entry.id);
+
+                    if ($('#entryDivisionId').length) {
+                        $('#entryDivisionId').val(entry.division_id);
+                    }
+
+                    renderDynamicForm(entry.data || {});
+                    setEntryFormReadonly(true);
                     entryModal.show();
                 },
                 error: function (xhr) {
@@ -836,14 +1287,59 @@
         });
 
         $(document).on('click', '.add-directory-value-btn', function () {
+            let directoryId = String($(this).data('directory-id'));
+
             $('#directoryValueFieldKey').val($(this).data('field-key'));
-            $('#directoryValueDirectoryId').val($(this).data('directory-id'));
-            $('#directoryValueInput').val('');
+            $('#directoryValueDirectoryId').val(directoryId);
 
             let fieldLabel = $(this).data('field-label') || 'field';
             $('#directoryValueModalTitle').text(`Add value: ${fieldLabel}`);
+            renderDirectoryValueModalForm(directoryId);
 
             directoryValueModal.show();
+        });
+
+        $(document).on('click', '.generate-directory-qr-value', function () {
+            $(this).closest('.input-group').find('.directory-value-field').val(generateQrClientValue()).trigger('input');
+        });
+
+        $(document).on('click', '.scan-directory-value-btn', function () {
+            let fieldKey = $(this).data('field-key');
+            let field = schema.find(function (item) {
+                return item.key === fieldKey;
+            });
+
+            if (!field) {
+                showToast('Поле журнала не найдено', 'warning');
+                return;
+            }
+
+            let scannedValue = prompt('Сканируйте QR/штрихкод');
+
+            if (scannedValue === null || String(scannedValue).trim() === '') {
+                return;
+            }
+
+            let found = findDirectoryValueByQr(field, scannedValue);
+
+            if (!found) {
+                showToast('Объект по этому QR/штрихкоду не найден', 'warning');
+                return;
+            }
+
+            let select = $(`.journal-field[data-key="${fieldKey}"]`);
+            let label = getDirectoryOptionLabel(field, found);
+
+            if (select.find(`option[value="${found.id}"]`).length === 0) {
+                select.append(`
+                    <option value="${found.id}">
+                        ${escapeHtml(label)}
+                    </option>
+                `);
+            }
+
+            select.val(String(found.id)).trigger('change');
+            showToast('Объект найден: ' + label, 'success');
         });
 
         $('#directoryValueForm').on('submit', function (e) {
@@ -851,24 +1347,15 @@
 
             let fieldKey = $('#directoryValueFieldKey').val();
             let directoryId = $('#directoryValueDirectoryId').val();
-            let value = $('#directoryValueInput').val().trim();
-
             if (!fieldKey || !directoryId) {
                 showToast('Directory is not selected', 'danger');
-                return;
-            }
-
-            if (!value) {
-                showToast('Enter value', 'warning');
                 return;
             }
 
             $.ajax({
                 url: `/journals/${journalId}/directories/${directoryId}/values`,
                 method: "POST",
-                data: {
-                    value: value
-                },
+                data: collectDirectoryValueData(directoryId),
                 success: function (response) {
                     upsertDirectoryValue(directoryId, response.value);
 
@@ -876,13 +1363,23 @@
 
                     if (select.length) {
                         if (select.find(`option[value="${response.value.id}"]`).length === 0) {
+                            let field = schema.find(function (item) {
+                                return item.key === fieldKey;
+                            });
+                            let optionLabel = getDirectoryOptionLabel(field || {}, response.value);
+
                             select.append(`
                                 <option value="${response.value.id}">
-                                    ${escapeHtml(response.value.value)}
+                                    ${escapeHtml(optionLabel)}
                                 </option>
                             `);
                         } else {
-                            select.find(`option[value="${response.value.id}"]`).text(response.value.value);
+                            let field = schema.find(function (item) {
+                                return item.key === fieldKey;
+                            });
+                            let optionLabel = getDirectoryOptionLabel(field || {}, response.value);
+
+                            select.find(`option[value="${response.value.id}"]`).text(optionLabel);
                         }
 
                         select.val(String(response.value.id)).trigger('change');
@@ -906,16 +1403,31 @@
             $('#dateTo').val('');
             $('#statusFilter').val('');
             $('#searchInput').val('');
+            $('.journal-field-filter').val('');
 
             if ($('#divisionFilter').length) {
                 $('#divisionFilter').val('');
             }
+
+            $('#showDeletedFilter').prop('checked', false);
 
             loadEntries(1);
         });
 
         $('#searchInput').on('keyup', function (e) {
             if (e.key === 'Enter') {
+                loadEntries(1);
+            }
+        });
+
+        $(document).on('keyup', '.journal-field-filter', function (e) {
+            if (e.key === 'Enter') {
+                loadEntries(1);
+            }
+        });
+
+        $(document).on('change', '.journal-field-filter', function () {
+            if ($(this).is('select, input[type="date"], input[type="time"]')) {
                 loadEntries(1);
             }
         });
@@ -930,6 +1442,9 @@
             }
         });
         $(document).on('change', '#divisionFilter', function () {
+            loadEntries(1);
+        });
+        $(document).on('change', '#showDeletedFilter', function () {
             loadEntries(1);
         });
         $(document).on('click', '.approve-entry', function () {
@@ -975,38 +1490,62 @@
                 }
             });
         });
-        function canEditEntry(entry) {
-            if (userRole === 'worker') {
-                if (entry.status === 'approved') {
-                    return false;
-                }
+        $(document).on('click', '.restore-entry', function () {
+            let id = $(this).data('id');
 
-                // submitted и rejected можно редактировать
-                return true;
+            if (!confirm('Восстановить запись журнала?')) {
+                return;
             }
 
-            return true;
+            $.ajax({
+                url: `/journals/${journalId}/entries/${id}/restore`,
+                method: "POST",
+                success: function (response) {
+                    showToast(response.message, 'success');
+                    loadEntries(currentPage);
+                },
+                error: function (xhr) {
+                    showAjaxErrors(xhr);
+                }
+            });
+        });
+        function canEditEntry(entry) {
+            if (entry.deleted_at) {
+                return false;
+            }
+
+            return !!entry.can_edit;
         }
 
         function canDeleteEntry(entry) {
-            if (userRole === 'worker') {
-                if (entry.status === 'approved') {
-                    return false;
-                }
-
-                if (entry.status === 'rejected') {
-                    return false;
-                }
-
-                // submitted можно удалить
-                return true;
-            }
-
-            return true;
+            return !!entry.can_delete;
         }
 
         function actionButtons(entry) {
             let html = `<div class="btn-group btn-group-sm">`;
+
+            if (entry.deleted_at) {
+                html += `
+            <button class="btn btn-outline-secondary view-entry"
+                    data-id="${entry.id}"
+                    title="Просмотр">
+                <i class="bi bi-eye"></i>
+            </button>
+        `;
+
+                if (userRole === 'admin') {
+                    html += `
+            <button class="btn btn-outline-success restore-entry"
+                    data-id="${entry.id}"
+                    title="Восстановить">
+                <i class="bi bi-arrow-counterclockwise"></i>
+            </button>
+        `;
+                }
+
+                html += `</div>`;
+                return html;
+            }
 
             if (canEditEntry(entry)) {
                 html += `
@@ -1068,8 +1607,18 @@
                 params.append('search', $('#searchInput').val());
             }
 
+            let fieldFilters = collectFieldFilters();
+
+            Object.keys(fieldFilters).forEach(function (key) {
+                params.append(`field_filters[${key}]`, fieldFilters[key]);
+            });
+
             if ($('#divisionFilter').length && $('#divisionFilter').val()) {
                 params.append('division_id', $('#divisionFilter').val());
+            }
+
+            if ($('#showDeletedFilter').is(':checked')) {
+                params.append('show_deleted', '1');
             }
 
             let url = `/journals/${journalId}/print`;
@@ -1080,7 +1629,30 @@
 
             window.open(url, '_blank');
         });
+
+        $('#toggleJournalFullscreenBtn').on('click', function () {
+            journalFullscreen = !journalFullscreen;
+            $('#journalWorkspace').toggleClass('journal-fullscreen', journalFullscreen);
+            $('body').toggleClass('journal-fullscreen-active', journalFullscreen);
+            updateJournalFullscreenButton();
+        });
+
+        $('#toggleEntryModalFullscreenBtn').on('click', function () {
+            entryModalFullscreen = !entryModalFullscreen;
+            $('#entryModalDialog').toggleClass('modal-dialog-fullscreen', entryModalFullscreen);
+            updateEntryModalFullscreenButton();
+        });
+
+        $('#entryModal').on('hidden.bs.modal', function () {
+            entryModalFullscreen = false;
+            $('#entryModalDialog').removeClass('modal-dialog-fullscreen');
+            updateEntryModalFullscreenButton();
+        });
+
+        updateJournalFullscreenButton();
+        updateEntryModalFullscreenButton();
         renderTableHead();
+        renderFieldFilters();
         renderDynamicForm({});
         loadEntries();
         let commentsModal = new bootstrap.Modal(document.getElementById('commentsModal'));
