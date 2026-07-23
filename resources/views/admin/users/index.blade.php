@@ -129,6 +129,27 @@
                             </div>
                         </div>
 
+                        <div class="col-12 d-none" id="adminDirectoryTemplatePermission">
+                            <div class="card bg-dark border-secondary">
+                                <div class="card-body py-3">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input"
+                                               type="checkbox"
+                                               name="can_edit_directory_templates"
+                                               id="can_edit_directory_templates"
+                                               value="1">
+                                        <label class="form-check-label" for="can_edit_directory_templates">
+                                            Может настраивать свои шаблоны справочников
+                                        </label>
+                                    </div>
+
+                                    <div class="text-secondary small mt-2">
+                                        Админ получит отдельную страницу и будет видеть только созданные им справочники.
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
                     </div>
                 </div>
 
@@ -263,7 +284,18 @@
             $('#userForm')[0].reset();
             $('#userId').val('');
             $('#is_active').prop('checked', true);
+            $('#can_edit_directory_templates').prop('checked', false);
             $('#passwordHint').text('');
+            syncAdminDirectoryTemplatePermission();
+        }
+
+        function syncAdminDirectoryTemplatePermission() {
+            let isAdmin = $('#role').val() === 'admin';
+            $('#adminDirectoryTemplatePermission').toggleClass('d-none', !isAdmin);
+
+            if (!isAdmin) {
+                $('#can_edit_directory_templates').prop('checked', false);
+            }
         }
 
         function renderUserPermissions(items) {
@@ -408,6 +440,8 @@
                     $('#role').val(user.role);
                     $('#division_id').val(user.division_id);
                     $('#is_active').prop('checked', user.is_active);
+                    $('#can_edit_directory_templates').prop('checked', !!user.can_edit_directory_templates);
+                    syncAdminDirectoryTemplatePermission();
 
                     $('#password').val('');
                     $('#passwordHint').text('(оставьте пустым, если не менять)');
@@ -456,6 +490,10 @@
 
         $('#roleFilter, #divisionFilter').on('change', function () {
             loadUsers();
+        });
+
+        $('#role').on('change', function () {
+            syncAdminDirectoryTemplatePermission();
         });
 
         $('#resetFilters').on('click', function () {

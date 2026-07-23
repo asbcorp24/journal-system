@@ -10,6 +10,7 @@ use App\Http\Controllers\Auth\UserAuthController;
 use App\Http\Controllers\User\ChartController;
 use App\Http\Controllers\User\DashboardController;
 use App\Http\Controllers\User\DirectoryController as UserDirectoryController;
+use App\Http\Controllers\User\DirectoryTemplateController;
 use App\Http\Controllers\User\JournalController;
 use App\Http\Controllers\User\NotificationController;
 use App\Http\Controllers\User\ReportController;
@@ -151,6 +152,48 @@ Route::middleware('user.auth')->group(function () {
 
     Route::delete('/directory-values/{value}', [UserDirectoryController::class, 'destroyValue'])
         ->name('user.directory-values.destroy');
+
+    Route::get('/directory-templates', [DirectoryTemplateController::class, 'index'])
+        ->name('user.directory-templates.index');
+
+    Route::get('/directory-templates/list', [DirectoryTemplateController::class, 'list'])
+        ->name('user.directory-templates.list');
+
+    Route::post('/directory-templates', [DirectoryTemplateController::class, 'store'])
+        ->name('user.directory-templates.store');
+
+    Route::get('/directory-templates/{directory}', [DirectoryTemplateController::class, 'show'])
+        ->name('user.directory-templates.show');
+
+    Route::post('/directory-templates/{directory}', [DirectoryTemplateController::class, 'update'])
+        ->name('user.directory-templates.update');
+
+    Route::delete('/directory-templates/{directory}', [DirectoryTemplateController::class, 'destroy'])
+        ->name('user.directory-templates.destroy');
+
+    Route::get('/directory-templates/{directory}/values', [DirectoryTemplateController::class, 'valuesList'])
+        ->name('user.directory-templates.values.list');
+
+    Route::post('/directory-templates/{directory}/values', [DirectoryTemplateController::class, 'valueStore'])
+        ->name('user.directory-templates.values.store');
+
+    Route::post('/directory-templates/{directory}/import-csv', [DirectoryTemplateController::class, 'importCsv'])
+        ->name('user.directory-templates.import.csv');
+
+    Route::get('/directory-templates/{directory}/print', [DirectoryTemplateController::class, 'print'])
+        ->name('user.directory-templates.print');
+
+    Route::get('/directory-templates/{directory}/barcodes', [DirectoryTemplateController::class, 'printBarcodes'])
+        ->name('user.directory-templates.barcodes');
+
+    Route::get('/directory-template-values/{value}', [DirectoryTemplateController::class, 'valueShow'])
+        ->name('user.directory-template-values.show');
+
+    Route::post('/directory-template-values/{value}', [DirectoryTemplateController::class, 'valueUpdate'])
+        ->name('user.directory-template-values.update');
+
+    Route::delete('/directory-template-values/{value}', [DirectoryTemplateController::class, 'valueDestroy'])
+        ->name('user.directory-template-values.destroy');
 
 });
 

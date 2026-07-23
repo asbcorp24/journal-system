@@ -16,18 +16,34 @@ class DirectoryController extends Controller
 {
     public function index()
     {
+        $this->authorizePageAccess();
+
         $divisions = Division::orderBy('name')->get();
-        $referenceDirectories = Directory::query()
+        $referenceDirectories = $this->visibleDirectoriesQuery()
             ->orderBy('name')
             ->get(['id', 'name', 'schema']);
+        $directoryRoutes = $this->directoryRoutes();
+        $directoryPageLayout = $this->directoryPageLayout();
+        $directoryPageTitle = $this->directoryPageTitle();
+        $directoryCanModifyFilled = $this->canModifyFilledDirectory();
 
-        return view('admin.directories.index', compact('divisions', 'referenceDirectories'));
+        return view('admin.directories.index', compact(
+            'divisions',
+            'referenceDirectories',
+            'directoryRoutes',
+            'directoryPageLayout',
+            'directoryPageTitle',
+            'directoryCanModifyFilled'
+        ));
     }
 
     public function list(Request $request)
     {
-        $query = Directory::withCount('values')
-            ->with('divisions')
+        $this->authorizePageAccess();
+
+        $query = $this->visibleDirectoriesQuery()
+            ->withCount('values')
+            ->with(['divisions', 'creator'])
             ->orderByDesc('id');
 
         if ($request->filled('search')) {
@@ -58,6 +74,8 @@ class DirectoryController extends Controller
 
     public function store(Request $request)
     {
+        $this->authorizePageAccess();
+
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255', 'unique:directories,name'],
             'code' => ['nullable', 'string', 'max:255', 'unique:directories,code'],
@@ -75,6 +93,7 @@ class DirectoryController extends Controller
                 'code' => $validated['code'] ?? null,
                 'description' => $validated['description'] ?? null,
                 'schema' => $schema,
+                'created_by' => $this->currentDirectoryCreatorId(),
             ]);
 
             $directory->divisions()->sync($validated['division_ids'] ?? []);
@@ -91,6 +110,7 @@ class DirectoryController extends Controller
 
     public function show(Directory $directory)
     {
+        $this->authorizeDirectoryAccess($directory);
         $directory->load('divisions');
 
         return response()->json([
@@ -108,6 +128,15 @@ class DirectoryController extends Controller
 
     public function update(Request $request, Directory $directory)
     {
+        $this->authorizeDirectoryAccess($directory);
+
+        if (!$this->canModifyFilledDirectory() && $directory->values()->exists()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Нельзя редактировать шаблон справочника, потому что он уже заполнен значениями',
+            ], 422);
+        }
+
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255', Rule::unique('directories', 'name')->ignore($directory->id)],
             'code' => ['nullable', 'string', 'max:255', Rule::unique('directories', 'code')->ignore($directory->id)],
@@ -138,6 +167,15 @@ class DirectoryController extends Controller
 
     public function destroy(Directory $directory)
     {
+        $this->authorizeDirectoryAccess($directory);
+
+        if (!$this->canModifyFilledDirectory() && $directory->values()->exists()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Нельзя удалить справочник, потому что он уже заполнен значениями',
+            ], 422);
+        }
+
         $directory->delete();
 
         return response()->json([
@@ -148,6 +186,8 @@ class DirectoryController extends Controller
 
     public function valuesList(Request $request, Directory $directory)
     {
+        $this->authorizeDirectoryAccess($directory);
+
         $query = $directory->values()
             ->with('directory')
             ->orderBy('sort_order')
@@ -239,6 +279,8 @@ class DirectoryController extends Controller
 
     public function print(Directory $directory)
     {
+        $this->authorizeDirectoryAccess($directory);
+
         $directory->load(['values' => function ($query) {
             $query->orderBy('sort_order')->orderBy('value');
         }]);
@@ -252,6 +294,8 @@ class DirectoryController extends Controller
 
     public function printBarcodes(Directory $directory)
     {
+        $this->authorizeDirectoryAccess($directory);
+
         $directory->load(['values' => function ($query) {
             $query->orderBy('sort_order')->orderBy('value');
         }]);
@@ -269,6 +313,8 @@ class DirectoryController extends Controller
 
     public function valueStore(Request $request, Directory $directory)
     {
+        $this->authorizeDirectoryAccess($directory);
+
         [$recordData, $displayValue] = $this->validateDirectoryValuePayload($request, $directory);
 
         $validated = $request->validate([
@@ -297,6 +343,7 @@ class DirectoryController extends Controller
     public function valueShow(DirectoryValue $value)
     {
         $value->load('directory');
+        $this->authorizeDirectoryAccess($value->directory);
 
         return response()->json([
             'success' => true,
@@ -307,6 +354,8 @@ class DirectoryController extends Controller
     public function valueUpdate(Request $request, DirectoryValue $value)
     {
         $value->load('directory');
+        $this->authorizeDirectoryAccess($value->directory);
+
         [$recordData, $displayValue] = $this->validateDirectoryValuePayloadForUpdate($request, $value);
 
         $validated = $request->validate([
@@ -331,6 +380,9 @@ class DirectoryController extends Controller
 
     public function valueDestroy(DirectoryValue $value)
     {
+        $value->load('directory');
+        $this->authorizeDirectoryAccess($value->directory);
+
         $value->delete();
 
         return response()->json([
@@ -341,6 +393,8 @@ class DirectoryController extends Controller
 
     public function importCsv(Request $request, Directory $directory)
     {
+        $this->authorizeDirectoryAccess($directory);
+
         $request->validate([
             'csv_file' => ['required', 'file', 'mimes:csv,txt'],
             'delimiter' => ['required', 'string', 'max:2'],
@@ -609,6 +663,56 @@ class DirectoryController extends Controller
         }
 
         return mb_strpos($actualText, $expectedText) !== false;
+    }
+
+    protected function authorizePageAccess(): void
+    {
+    }
+
+    protected function authorizeDirectoryAccess(?Directory $directory): void
+    {
+        if (!$directory) {
+            abort(404);
+        }
+    }
+
+    protected function visibleDirectoriesQuery()
+    {
+        return Directory::query();
+    }
+
+    protected function currentDirectoryCreatorId(): ?int
+    {
+        return null;
+    }
+
+    protected function canModifyFilledDirectory(): bool
+    {
+        return true;
+    }
+
+    protected function directoryPageLayout(): string
+    {
+        return 'admin.layouts.app';
+    }
+
+    protected function directoryPageTitle(): string
+    {
+        return 'Справочники';
+    }
+
+    protected function directoryRoutes(): array
+    {
+        return [
+            'list' => route('admin.directories.list'),
+            'store' => route('admin.directories.store'),
+            'directory' => url('/admin/directories/__ID__'),
+            'directoryValues' => url('/admin/directories/__ID__/values'),
+            'directoryImportCsv' => url('/admin/directories/__ID__/import-csv'),
+            'directoryPrint' => url('/admin/directories/__ID__/print'),
+            'directoryBarcodes' => url('/admin/directories/__ID__/barcodes'),
+            'value' => url('/admin/directory-values/__ID__'),
+        ];
     }
 
 }

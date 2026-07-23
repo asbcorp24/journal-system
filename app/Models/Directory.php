@@ -11,6 +11,7 @@ class Directory extends Model
         'code',
         'description',
         'schema',
+        'created_by',
     ];
 
     protected $casts = [
@@ -27,4 +28,8 @@ class Directory extends Model
         return $this->belongsToMany(Division::class, 'directory_division');
     }
 
+    public function creator()
+    {
+        return $this->belongsTo(User::class, 'created_by');
+    }
 }

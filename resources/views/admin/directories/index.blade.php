@@ -1,12 +1,12 @@
-@extends('admin.layouts.app')
+@extends($directoryPageLayout ?? 'admin.layouts.app')
 
-@section('title', 'Справочники')
+@section('title', $directoryPageTitle ?? 'Справочники')
 
 @section('content')
 
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
-            <h2 class="fw-bold mb-1">Справочники</h2>
+            <h2 class="fw-bold mb-1">{{ $directoryPageTitle ?? 'Справочники' }}</h2>
             <div class="text-secondary">
                 Шаблоны полей и записи справочников в JSON
             </div>
@@ -327,7 +327,19 @@
         let schemaFields = [];
         let schemaFieldIndex = 0;
         const referenceDirectories = @json($referenceDirectories);
+        const directoryRoutes = @json($directoryRoutes);
+        const directoryCanModifyFilled = @json($directoryCanModifyFilled ?? true);
         let directoryValuesCache = {};
+
+        function directoryRoute(name, id = null) {
+            let url = directoryRoutes[name] || '';
+
+            if (id !== null) {
+                url = url.replace('__ID__', encodeURIComponent(id));
+            }
+
+            return url;
+        }
 
         function escapeHtml(text) {
             if (text === null || text === undefined) {
@@ -414,7 +426,7 @@
             }
 
             $.ajax({
-                url: `/admin/directories/${field.directory_id}/values`,
+                url: directoryRoute('directoryValues', field.directory_id),
                 method: 'GET',
                 data: { all: 1 },
                 success: function (response) {
@@ -459,7 +471,7 @@
             `);
 
             $.ajax({
-                url: "{{ route('admin.directories.list') }}",
+                url: directoryRoute('list'),
                 method: 'GET',
                 data: {
                     page: page,
@@ -490,6 +502,10 @@
             items.forEach(function (item) {
                 let activeClass = selectedDirectoryId === item.id ? 'table-active' : '';
                 let fieldCount = item.schema ? item.schema.length : 0;
+                let valuesCount = Number(item.values_count || 0);
+                let filledDisabled = !directoryCanModifyFilled && valuesCount > 0
+                    ? 'disabled title="Нельзя менять шаблон: справочник уже заполнен"'
+                    : '';
 
                 html += `
                     <tr class="${activeClass}">
@@ -505,8 +521,8 @@
                         </td>
                         <td><span class="badge bg-secondary">${item.values_count}</span></td>
                         <td class="text-end">
-                            <button class="btn btn-sm btn-outline-info edit-directory" data-id="${item.id}"><i class="bi bi-pencil"></i></button>
-                            <button class="btn btn-sm btn-outline-danger delete-directory" data-id="${item.id}"><i class="bi bi-trash"></i></button>
+                            <button class="btn btn-sm btn-outline-info edit-directory" data-id="${item.id}" ${filledDisabled}><i class="bi bi-pencil"></i></button>
+                            <button class="btn btn-sm btn-outline-danger delete-directory" data-id="${item.id}" ${filledDisabled}><i class="bi bi-trash"></i></button>
                         </td>
                     </tr>
                 `;
@@ -598,7 +614,7 @@
             `);
 
             $.ajax({
-                url: `/admin/directories/${selectedDirectoryId}/values`,
+                url: directoryRoute('directoryValues', selectedDirectoryId),
                 method: 'GET',
                 data: {
                     page: page,
@@ -1046,7 +1062,7 @@
             e.preventDefault();
 
             let id = $('#directoryId').val();
-            let url = id ? `/admin/directories/${id}` : "{{ route('admin.directories.store') }}";
+            let url = id ? directoryRoute('directory', id) : directoryRoute('store');
 
             $.ajax({
                 url: url,
@@ -1073,7 +1089,7 @@
             clearDirectoryForm();
 
             $.ajax({
-                url: `/admin/directories/${id}`,
+                url: directoryRoute('directory', id),
                 method: 'GET',
                 success: function (response) {
                     let item = response.directory;
@@ -1112,7 +1128,7 @@
             }
 
             $.ajax({
-                url: `/admin/directories/${id}`,
+                url: directoryRoute('directory', id),
                 method: 'DELETE',
                 success: function (response) {
                     showToast(response.message, 'success');
@@ -1162,7 +1178,7 @@
             }
 
             let id = $('#valueId').val();
-            let url = id ? `/admin/directory-values/${id}` : `/admin/directories/${selectedDirectoryId}/values`;
+            let url = id ? directoryRoute('value', id) : directoryRoute('directoryValues', selectedDirectoryId);
 
             $.ajax({
                 url: url,
@@ -1184,7 +1200,7 @@
             let id = $(this).data('id');
 
             $.ajax({
-                url: `/admin/directory-values/${id}`,
+                url: directoryRoute('value', id),
                 method: 'GET',
                 success: function (response) {
                     let item = response.value;
@@ -1217,7 +1233,7 @@
             }
 
             $.ajax({
-                url: `/admin/directory-values/${id}`,
+                url: directoryRoute('value', id),
                 method: 'DELETE',
                 success: function (response) {
                     showToast(response.message, 'success');
@@ -1248,7 +1264,7 @@
                 return;
             }
 
-            window.open(`/admin/directories/${selectedDirectoryId}/print`, '_blank');
+            window.open(directoryRoute('directoryPrint', selectedDirectoryId), '_blank');
         });
 
         $('#printBarcodesBtn').on('click', function () {
@@ -1257,7 +1273,7 @@
                 return;
             }
 
-            window.open(`/admin/directories/${selectedDirectoryId}/barcodes`, '_blank');
+            window.open(directoryRoute('directoryBarcodes', selectedDirectoryId), '_blank');
         });
 
         $('#csvForm').on('submit', function (e) {
@@ -1271,7 +1287,7 @@
             let formData = new FormData(this);
 
             $.ajax({
-                url: `/admin/directories/${selectedDirectoryId}/import-csv`,
+                url: directoryRoute('directoryImportCsv', selectedDirectoryId),
                 method: 'POST',
                 data: formData,
                 processData: false,

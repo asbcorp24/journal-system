@@ -85,6 +85,13 @@
                 <i class="bi bi-card-list"></i>
                 Справочники
             </a>
+            @if(session('user_role') === 'admin' && session('can_edit_directory_templates'))
+                <a href="{{ route('user.directory-templates.index') }}"
+                   class="{{ request()->routeIs('user.directory-templates.*') || request()->routeIs('user.directory-template-values.*') ? 'active' : '' }}">
+                    <i class="bi bi-pencil-square"></i>
+                    Шаблоны справочников
+                </a>
+            @endif
             @if(session('user_role') === 'foreman' || session('user_role') === 'admin')
                 <a href="{{ route('user.review.index') }}"
                    class="{{ request()->routeIs('user.review.*') ? 'active' : '' }}">
@@ -151,6 +158,13 @@
             <i class="bi bi-card-list"></i>
             Справочники
         </a>
+        @if(session('user_role') === 'admin' && session('can_edit_directory_templates'))
+            <a href="{{ route('user.directory-templates.index') }}"
+               class="{{ request()->routeIs('user.directory-templates.*') || request()->routeIs('user.directory-template-values.*') ? 'active' : '' }}">
+                <i class="bi bi-pencil-square"></i>
+                Шаблоны справочников
+            </a>
+        @endif
 
         @if(session('user_role') === 'foreman' || session('user_role') === 'admin')
             <a href="#">

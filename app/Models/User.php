@@ -13,6 +13,7 @@ class User extends Authenticatable
         'role',
         'division_id',
         'is_active',
+        'can_edit_directory_templates',
     ];
 
     protected $hidden = [
@@ -22,6 +23,7 @@ class User extends Authenticatable
 
     protected $casts = [
         'is_active' => 'boolean',
+        'can_edit_directory_templates' => 'boolean',
     ];
 
     public function division()

@@ -76,6 +76,7 @@ class UserController extends Controller
             'role' => ['required', Rule::in(['worker', 'foreman', 'admin'])],
             'division_id' => 'nullable|exists:divisions,id',
             'is_active' => 'nullable|boolean',
+            'can_edit_directory_templates' => 'nullable|boolean',
         ]);
 
         $user = User::create([
@@ -85,6 +86,7 @@ class UserController extends Controller
             'role' => $validated['role'],
             'division_id' => $validated['division_id'] ?? null,
             'is_active' => $request->boolean('is_active'),
+            'can_edit_directory_templates' => $validated['role'] === 'admin' && $request->boolean('can_edit_directory_templates'),
         ]);
 
         return response()->json([
@@ -105,6 +107,7 @@ class UserController extends Controller
                 'role' => $user->role,
                 'division_id' => $user->division_id,
                 'is_active' => $user->is_active,
+                'can_edit_directory_templates' => $user->can_edit_directory_templates,
                 'decrypted_password' => UserPasswordCipher::decryptPassword($user->password),
             ],
         ]);
@@ -125,6 +128,7 @@ class UserController extends Controller
             'role' => ['required', Rule::in(['worker', 'foreman', 'admin'])],
             'division_id' => 'nullable|exists:divisions,id',
             'is_active' => 'nullable|boolean',
+            'can_edit_directory_templates' => 'nullable|boolean',
         ]);
 
         $data = [
@@ -133,6 +137,7 @@ class UserController extends Controller
             'role' => $validated['role'],
             'division_id' => $validated['division_id'] ?? null,
             'is_active' => $request->boolean('is_active'),
+            'can_edit_directory_templates' => $validated['role'] === 'admin' && $request->boolean('can_edit_directory_templates'),
         ];
 
         if (!empty($validated['password'])) {
