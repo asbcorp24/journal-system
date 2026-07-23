@@ -143,8 +143,19 @@
                                         </label>
                                     </div>
 
+                                    <div class="form-check form-switch mt-2">
+                                        <input class="form-check-input"
+                                               type="checkbox"
+                                               name="can_edit_journal_templates"
+                                               id="can_edit_journal_templates"
+                                               value="1">
+                                        <label class="form-check-label" for="can_edit_journal_templates">
+                                            Может настраивать свои шаблоны журналов
+                                        </label>
+                                    </div>
+
                                     <div class="text-secondary small mt-2">
-                                        Админ получит отдельную страницу и будет видеть только созданные им справочники.
+                                        Админ получит отдельные страницы и будет видеть только созданные им шаблоны.
                                     </div>
                                 </div>
                             </div>
@@ -285,6 +296,7 @@
             $('#userId').val('');
             $('#is_active').prop('checked', true);
             $('#can_edit_directory_templates').prop('checked', false);
+            $('#can_edit_journal_templates').prop('checked', false);
             $('#passwordHint').text('');
             syncAdminDirectoryTemplatePermission();
         }
@@ -295,6 +307,7 @@
 
             if (!isAdmin) {
                 $('#can_edit_directory_templates').prop('checked', false);
+                $('#can_edit_journal_templates').prop('checked', false);
             }
         }
 
@@ -441,6 +454,7 @@
                     $('#division_id').val(user.division_id);
                     $('#is_active').prop('checked', user.is_active);
                     $('#can_edit_directory_templates').prop('checked', !!user.can_edit_directory_templates);
+                    $('#can_edit_journal_templates').prop('checked', !!user.can_edit_journal_templates);
                     syncAdminDirectoryTemplatePermission();
 
                     $('#password').val('');

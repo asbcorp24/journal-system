@@ -14,15 +14,34 @@ class JournalTemplateController extends Controller
 {
     public function index()
     {
+        $this->authorizePageAccess();
+
         $divisions = Division::orderBy('name')->get();
         $directories = Directory::orderBy('name')->get();
+        $journalTemplateRoutes = $this->journalTemplateRoutes();
+        $journalTemplatePageLayout = $this->journalTemplatePageLayout();
+        $journalTemplatePageTitle = $this->journalTemplatePageTitle();
+        $journalTemplateCanModifyUsed = $this->canModifyUsedJournalTemplate();
 
-        return view('admin.journal-templates.index', compact('divisions', 'directories'));
+        return view('admin.journal-templates.index', compact(
+            'divisions',
+            'directories',
+            'journalTemplateRoutes',
+            'journalTemplatePageLayout',
+            'journalTemplatePageTitle',
+            'journalTemplateCanModifyUsed'
+        ));
     }
 
     public function list(Request $request)
     {
-        $query = JournalTemplate::with('divisions')
+        $this->authorizePageAccess();
+
+        $query = $this->visibleJournalTemplatesQuery()
+            ->with(['divisions', 'creator'])
+            ->withCount(['entries as entries_count' => function ($query) {
+                $query->withTrashed();
+            }])
             ->orderByDesc('id');
 
         if ($request->filled('search')) {
@@ -57,6 +76,8 @@ class JournalTemplateController extends Controller
 
     public function store(Request $request)
     {
+        $this->authorizePageAccess();
+
         $validated = $this->validateTemplate($request);
 
         $template = DB::transaction(function () use ($validated, $request) {
@@ -66,7 +87,7 @@ class JournalTemplateController extends Controller
                 'description' => $validated['description'] ?? null,
                 'schema' => $validated['schema'],
                 'is_active' => $request->boolean('is_active'),
-                'created_by' => null,
+                'created_by' => $this->currentJournalTemplateCreatorId(),
             ]);
 
             $template->divisions()->sync($validated['division_ids'] ?? []);
@@ -83,6 +104,7 @@ class JournalTemplateController extends Controller
 
     public function show(JournalTemplate $journalTemplate)
     {
+        $this->authorizeJournalTemplateAccess($journalTemplate);
         $journalTemplate->load('divisions');
 
         return response()->json([
@@ -101,6 +123,15 @@ class JournalTemplateController extends Controller
 
     public function update(Request $request, JournalTemplate $journalTemplate)
     {
+        $this->authorizeJournalTemplateAccess($journalTemplate);
+
+        if (!$this->canModifyUsedJournalTemplate() && $journalTemplate->entries()->withTrashed()->exists()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Нельзя редактировать шаблон журнала, потому что в нём уже есть записи',
+            ], 422);
+        }
+
         $validated = $this->validateTemplate($request, $journalTemplate->id);
 
         DB::transaction(function () use ($journalTemplate, $validated, $request) {
@@ -123,12 +154,66 @@ class JournalTemplateController extends Controller
 
     public function destroy(JournalTemplate $journalTemplate)
     {
+        $this->authorizeJournalTemplateAccess($journalTemplate);
+
+        if (!$this->canModifyUsedJournalTemplate() && $journalTemplate->entries()->withTrashed()->exists()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Нельзя удалить журнал, потому что в нём уже есть записи',
+            ], 422);
+        }
+
         $journalTemplate->delete();
 
         return response()->json([
             'success' => true,
             'message' => 'Журнал удалён',
         ]);
+    }
+
+    protected function authorizePageAccess(): void
+    {
+    }
+
+    protected function authorizeJournalTemplateAccess(?JournalTemplate $journalTemplate): void
+    {
+        if (!$journalTemplate) {
+            abort(404);
+        }
+    }
+
+    protected function visibleJournalTemplatesQuery()
+    {
+        return JournalTemplate::query();
+    }
+
+    protected function currentJournalTemplateCreatorId(): ?int
+    {
+        return null;
+    }
+
+    protected function canModifyUsedJournalTemplate(): bool
+    {
+        return true;
+    }
+
+    protected function journalTemplatePageLayout(): string
+    {
+        return 'admin.layouts.app';
+    }
+
+    protected function journalTemplatePageTitle(): string
+    {
+        return 'Конструктор журналов';
+    }
+
+    protected function journalTemplateRoutes(): array
+    {
+        return [
+            'list' => route('admin.journal-templates.list'),
+            'store' => route('admin.journal-templates.store'),
+            'template' => url('/admin/journal-templates/__ID__'),
+        ];
     }
 
     private function validateTemplate(Request $request, ?int $ignoreId = null): array

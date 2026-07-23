@@ -1,12 +1,12 @@
-@extends('admin.layouts.app')
+@extends($journalTemplatePageLayout ?? 'admin.layouts.app')
 
-@section('title', 'Конструктор журналов')
+@section('title', $journalTemplatePageTitle ?? 'Конструктор журналов')
 
 @section('content')
 
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
-            <h2 class="fw-bold mb-1">Конструктор журналов</h2>
+            <h2 class="fw-bold mb-1">{{ $journalTemplatePageTitle ?? 'Конструктор журналов' }}</h2>
             <div class="text-secondary">
                 Создание шаблонов журналов и настройка динамических полей
             </div>
@@ -57,13 +57,14 @@
                         <th>Полей</th>
                         <th>Подразделения</th>
                         <th>Статус</th>
+                        <th>Автор</th>
                         <th class="text-end">Действия</th>
                     </tr>
                     </thead>
 
                     <tbody id="templatesTableBody">
                     <tr>
-                        <td colspan="7" class="text-center text-secondary py-5">
+                        <td colspan="8" class="text-center text-secondary py-5">
                             Загрузка...
                         </td>
                     </tr>
@@ -214,6 +215,18 @@
         let fieldIndex = 0;
 
         const directories = @json($directories);
+        const journalTemplateRoutes = @json($journalTemplateRoutes);
+        const journalTemplateCanModifyUsed = @json($journalTemplateCanModifyUsed ?? true);
+
+        function journalTemplateRoute(name, id = null) {
+            let url = journalTemplateRoutes[name] || '';
+
+            if (id !== null) {
+                url = url.replace('__ID__', encodeURIComponent(id));
+            }
+
+            return url;
+        }
 
         function escapeHtml(text) {
             if (text === null || text === undefined) {
@@ -228,14 +241,14 @@
 
             $('#templatesTableBody').html(`
             <tr>
-                <td colspan="7" class="text-center text-secondary py-5">
+                <td colspan="8" class="text-center text-secondary py-5">
                     Загрузка...
                 </td>
             </tr>
         `);
 
             $.ajax({
-                url: "{{ route('admin.journal-templates.list') }}",
+                url: journalTemplateRoute('list'),
                 method: "GET",
                 data: {
                     page: page,
@@ -258,7 +271,7 @@
             if (!items || items.length === 0) {
                 $('#templatesTableBody').html(`
                 <tr>
-                    <td colspan="7" class="text-center text-secondary py-5">
+                    <td colspan="8" class="text-center text-secondary py-5">
                         Журналы не найдены
                     </td>
                 </tr>
@@ -281,6 +294,14 @@
                     ? '<span class="badge bg-success">Активен</span>'
                     : '<span class="badge bg-danger">Отключён</span>';
 
+                let entriesCount = Number(item.entries_count || 0);
+                let usedDisabled = !journalTemplateCanModifyUsed && entriesCount > 0
+                    ? 'disabled title="Нельзя менять шаблон: в журнале уже есть записи"'
+                    : '';
+                let authorName = item.creator && item.creator.name
+                    ? escapeHtml(item.creator.name)
+                    : '<span class="text-secondary">Суперадмин</span>';
+
                 html += `
                 <tr>
                     <td>${item.id}</td>
@@ -300,12 +321,14 @@
 
                     <td>${activeBadge}</td>
 
+                    <td>${authorName}</td>
+
                     <td class="text-end">
-                        <button class="btn btn-sm btn-outline-info edit-template" data-id="${item.id}">
+                        <button class="btn btn-sm btn-outline-info edit-template" data-id="${item.id}" ${usedDisabled}>
                             <i class="bi bi-pencil"></i>
                         </button>
 
-                        <button class="btn btn-sm btn-outline-danger delete-template" data-id="${item.id}">
+                        <button class="btn btn-sm btn-outline-danger delete-template" data-id="${item.id}" ${usedDisabled}>
                             <i class="bi bi-trash"></i>
                         </button>
                     </td>
@@ -832,8 +855,8 @@
             let id = $('#templateId').val();
 
             let url = id
-                ? "/admin/journal-templates/" + id
-                : "{{ route('admin.journal-templates.store') }}";
+                ? journalTemplateRoute('template', id)
+                : journalTemplateRoute('store');
 
             let payload = {
                 name: $('#templateName').val(),
@@ -865,7 +888,7 @@
             clearTemplateForm();
 
             $.ajax({
-                url: "/admin/journal-templates/" + id,
+                url: journalTemplateRoute('template', id),
                 method: "GET",
                 success: function (response) {
                     let item = response.template;
@@ -906,7 +929,7 @@
             }
 
             $.ajax({
-                url: "/admin/journal-templates/" + id,
+                url: journalTemplateRoute('template', id),
                 method: "DELETE",
                 success: function (response) {
                     showToast(response.message, 'success');

@@ -46,13 +46,14 @@
                                 <th>ID</th>
                                 <th>Справочник</th>
                                 <th>Записей</th>
+                                <th>Автор</th>
                                 <th class="text-end">Действия</th>
                             </tr>
                             </thead>
 
                             <tbody id="directoriesTableBody">
                             <tr>
-                                <td colspan="4" class="text-center text-secondary py-5">
+                                <td colspan="5" class="text-center text-secondary py-5">
                                     Загрузка...
                                 </td>
                             </tr>
@@ -507,6 +508,10 @@
                     ? 'disabled title="Нельзя менять шаблон: справочник уже заполнен"'
                     : '';
 
+                let authorName = item.creator && item.creator.name
+                    ? escapeHtml(item.creator.name)
+                    : '<span class="text-secondary">Суперадмин</span>';
+
                 html += `
                     <tr class="${activeClass}">
                         <td>${item.id}</td>
@@ -520,6 +525,7 @@
                             <div class="text-secondary small">${fieldCount ? 'Полей: ' + fieldCount : 'Без шаблона'}</div>
                         </td>
                         <td><span class="badge bg-secondary">${item.values_count}</span></td>
+                        <td>${authorName}</td>
                         <td class="text-end">
                             <button class="btn btn-sm btn-outline-info edit-directory" data-id="${item.id}" ${filledDisabled}><i class="bi bi-pencil"></i></button>
                             <button class="btn btn-sm btn-outline-danger delete-directory" data-id="${item.id}" ${filledDisabled}><i class="bi bi-trash"></i></button>

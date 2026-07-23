@@ -12,6 +12,7 @@ use App\Http\Controllers\User\DashboardController;
 use App\Http\Controllers\User\DirectoryController as UserDirectoryController;
 use App\Http\Controllers\User\DirectoryTemplateController;
 use App\Http\Controllers\User\JournalController;
+use App\Http\Controllers\User\JournalTemplateEditorController;
 use App\Http\Controllers\User\NotificationController;
 use App\Http\Controllers\User\ReportController;
 use App\Http\Controllers\User\ReviewController;
@@ -194,6 +195,24 @@ Route::middleware('user.auth')->group(function () {
 
     Route::delete('/directory-template-values/{value}', [DirectoryTemplateController::class, 'valueDestroy'])
         ->name('user.directory-template-values.destroy');
+
+    Route::get('/journal-templates', [JournalTemplateEditorController::class, 'index'])
+        ->name('user.journal-templates.index');
+
+    Route::get('/journal-templates/list', [JournalTemplateEditorController::class, 'list'])
+        ->name('user.journal-templates.list');
+
+    Route::post('/journal-templates', [JournalTemplateEditorController::class, 'store'])
+        ->name('user.journal-templates.store');
+
+    Route::get('/journal-templates/{journalTemplate}', [JournalTemplateEditorController::class, 'show'])
+        ->name('user.journal-templates.show');
+
+    Route::post('/journal-templates/{journalTemplate}', [JournalTemplateEditorController::class, 'update'])
+        ->name('user.journal-templates.update');
+
+    Route::delete('/journal-templates/{journalTemplate}', [JournalTemplateEditorController::class, 'destroy'])
+        ->name('user.journal-templates.destroy');
 
 });
 

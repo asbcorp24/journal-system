@@ -55,6 +55,7 @@ class UserAuthController extends Controller
             'user_role' => $user->role,
             'user_division_id' => $user->division_id,
             'can_edit_directory_templates' => $user->can_edit_directory_templates,
+            'can_edit_journal_templates' => $user->can_edit_journal_templates,
         ]);
 
         return response()->json([
@@ -73,6 +74,7 @@ class UserAuthController extends Controller
             'user_role',
             'user_division_id',
             'can_edit_directory_templates',
+            'can_edit_journal_templates',
         ]);
 
         return redirect()->route('user.login');
