@@ -2,12 +2,14 @@
 
 namespace App\Support;
 
+use App\Models\Directory;
+use App\Models\DirectoryValue;
 use Illuminate\Support\Arr;
 use Illuminate\Validation\ValidationException;
 
 class DirectorySchema
 {
-    public const FIELD_TYPES = ['text', 'number', 'date', 'time', 'list', 'qr'];
+    public const FIELD_TYPES = ['text', 'number', 'date', 'time', 'list', 'qr', 'directory'];
 
     public static function normalizeSchema($schema): array
     {
@@ -48,6 +50,37 @@ class DirectorySchema
 
             if ($type === 'qr') {
                 $item['auto_generate'] = self::toBoolean($field['auto_generate'] ?? false);
+            }
+
+            if ($type === 'directory') {
+                $directoryId = (int) ($field['directory_id'] ?? 0);
+
+                if ($directoryId <= 0 || !Directory::whereKey($directoryId)->exists()) {
+                    throw ValidationException::withMessages([
+                        'schema' => ["Р”Р»СЏ РїРѕР»СЏ В«{$label}В» РЅСѓР¶РЅРѕ РІС‹Р±СЂР°С‚СЊ СЃРїСЂР°РІРѕС‡РЅРёРє"],
+                    ]);
+                }
+
+                $displayField = trim((string) ($field['directory_display_field'] ?? ''));
+
+                if ($displayField !== '') {
+                    $directory = Directory::find($directoryId);
+                    $hasDisplayField = collect($directory->schema ?? [])->contains(function ($schemaField) use ($displayField) {
+                        return ($schemaField['key'] ?? null) === $displayField;
+                    });
+
+                    if (!$hasDisplayField) {
+                        throw ValidationException::withMessages([
+                            'schema' => ["РџРѕР»Рµ РѕС‚РѕР±СЂР°Р¶РµРЅРёСЏ РґР»СЏ В«{$label}В» РЅРµ РЅР°Р№РґРµРЅРѕ РІ СЃРїСЂР°РІРѕС‡РЅРёРєРµ"],
+                        ]);
+                    }
+                }
+
+                $item['directory_id'] = $directoryId;
+
+                if ($displayField !== '') {
+                    $item['directory_display_field'] = $displayField;
+                }
             }
 
             if ($type === 'list') {
@@ -162,6 +195,27 @@ class DirectorySchema
                 }
 
                 $result[$key] = (string) $value;
+                continue;
+            }
+
+            if ($type === 'directory') {
+                if (!is_numeric($value)) {
+                    throw ValidationException::withMessages([
+                        "data.{$key}" => ["РџРѕР»Рµ В«{$label}В» РґРѕР»Р¶РЅРѕ Р±С‹С‚СЊ Р·РЅР°С‡РµРЅРёРµРј СЃРїСЂР°РІРѕС‡РЅРёРєР°"],
+                    ]);
+                }
+
+                $exists = DirectoryValue::whereKey((int) $value)
+                    ->where('directory_id', (int) ($field['directory_id'] ?? 0))
+                    ->exists();
+
+                if (!$exists) {
+                    throw ValidationException::withMessages([
+                        "data.{$key}" => ["РќРµРєРѕСЂСЂРµРєС‚РЅРѕРµ Р·РЅР°С‡РµРЅРёРµ СЃРїСЂР°РІРѕС‡РЅРёРєР° В«{$label}В»"],
+                    ]);
+                }
+
+                $result[$key] = (int) $value;
             }
         }
 
@@ -187,6 +241,34 @@ class DirectorySchema
         }
 
         return $fallback !== null && $fallback !== '' ? $fallback : 'Запись';
+    }
+
+    public static function formatFieldValue(array $field, $value): string
+    {
+        if ($value === null || $value === '' || is_array($value)) {
+            return '-';
+        }
+
+        if (($field['type'] ?? null) === 'directory') {
+            $directoryValue = DirectoryValue::whereKey((int) $value)
+                ->where('directory_id', (int) ($field['directory_id'] ?? 0))
+                ->first();
+
+            if (!$directoryValue) {
+                return (string) $value;
+            }
+
+            $displayField = $field['directory_display_field'] ?? null;
+            $data = is_array($directoryValue->data) ? $directoryValue->data : [];
+
+            if ($displayField && isset($data[$displayField]) && $data[$displayField] !== '') {
+                return (string) $data[$displayField];
+            }
+
+            return (string) $directoryValue->value;
+        }
+
+        return (string) $value;
     }
 
     public static function buildDataFromLegacyValue(array $schema, string $value): array

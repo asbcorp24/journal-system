@@ -126,6 +126,18 @@
                             </div>
                         </div>
 
+                        <div class="card bg-dark border-secondary mb-3 d-none" id="valueFiltersCard">
+                            <div class="card-body py-3">
+                                <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
+                                    <div class="fw-semibold small">Фильтры по полям</div>
+                                    <button type="button" class="btn btn-sm btn-outline-light" id="resetValueFiltersBtn">
+                                        Сбросить фильтры
+                                    </button>
+                                </div>
+                                <div class="row g-2" id="valueFilters"></div>
+                            </div>
+                        </div>
+
                         <div class="table-responsive">
                             <table class="table table-dark table-hover align-middle">
                                 <thead>
@@ -314,6 +326,8 @@
         let selectedDirectoryData = null;
         let schemaFields = [];
         let schemaFieldIndex = 0;
+        const referenceDirectories = @json($referenceDirectories);
+        let directoryValuesCache = {};
 
         function escapeHtml(text) {
             if (text === null || text === undefined) {
@@ -337,6 +351,78 @@
             return schema.map(function (field) {
                 return `${field.label} (${field.type})`;
             }).join(', ');
+        }
+
+        function buildReferenceDirectoryOptions(selectedId) {
+            let html = '<option value="">Выберите справочник</option>';
+
+            referenceDirectories.forEach(function (directory) {
+                let selected = String(selectedId || '') === String(directory.id) ? 'selected' : '';
+                html += `<option value="${directory.id}" ${selected}>${escapeHtml(directory.name)}</option>`;
+            });
+
+            return html;
+        }
+
+        function buildReferenceDirectoryDisplayOptions(directoryId, selectedKey) {
+            let html = '<option value="">Первое заполненное поле</option>';
+            let directory = referenceDirectories.find(function (item) {
+                return String(item.id) === String(directoryId || '');
+            });
+
+            if (!directory || !Array.isArray(directory.schema)) {
+                return html;
+            }
+
+            directory.schema.forEach(function (field) {
+                let selected = String(selectedKey || '') === String(field.key) ? 'selected' : '';
+                html += `<option value="${escapeHtml(field.key)}" ${selected}>${escapeHtml(field.label)} (${escapeHtml(field.key)})</option>`;
+            });
+
+            return html;
+        }
+
+        function getDirectoryOptionLabel(field, item) {
+            if (!item) {
+                return '';
+            }
+
+            let displayField = field.directory_display_field || '';
+
+            if (displayField && item.data && item.data[displayField] !== undefined && item.data[displayField] !== null && item.data[displayField] !== '') {
+                return item.data[displayField];
+            }
+
+            return item.value || '';
+        }
+
+        function renderDirectoryFieldOptions(field, selectedValue) {
+            let html = '<option value="">Выберите значение</option>';
+            let values = directoryValuesCache[field.directory_id] || [];
+
+            values.forEach(function (item) {
+                let selected = String(selectedValue || '') === String(item.id) ? 'selected' : '';
+                html += `<option value="${item.id}" ${selected}>${escapeHtml(getDirectoryOptionLabel(field, item))}</option>`;
+            });
+
+            return html;
+        }
+
+        function loadDirectoryValuesForField(field, selectedValue) {
+            if (!field.directory_id || directoryValuesCache[field.directory_id]) {
+                return;
+            }
+
+            $.ajax({
+                url: `/admin/directories/${field.directory_id}/values`,
+                method: 'GET',
+                data: { all: 1 },
+                success: function (response) {
+                    directoryValuesCache[field.directory_id] = response.items || [];
+                    $(`.value-data-field[data-key="${field.key}"]`).html(renderDirectoryFieldOptions(field, selectedValue));
+                    $(`.value-filter-field[data-key="${field.key}"]`).html(renderDirectoryFieldOptions(field, selectedValue));
+                }
+            });
         }
 
         function renderPagination(target, pagination, type) {
@@ -438,6 +524,66 @@
             renderPagination('#directoriesPaginationLinks', pagination, 'directory');
         }
 
+        function renderValueFilters(schema) {
+            if (!schema || !schema.length) {
+                $('#valueFiltersCard').addClass('d-none');
+                $('#valueFilters').html('');
+                return;
+            }
+
+            let html = '';
+
+            schema.forEach(function (field) {
+                let key = escapeHtml(field.key || '');
+                let label = escapeHtml(field.label || field.key || '');
+                html += `<div class="col-md-4">`;
+                html += `<label class="form-label small mb-1">${label}</label>`;
+
+                if (field.type === 'list') {
+                    html += `<select class="form-select form-select-sm value-filter-field" data-key="${key}">`;
+                    html += `<option value="">Все</option>`;
+                    (field.options || []).forEach(function (option) {
+                        html += `<option value="${escapeHtml(option)}">${escapeHtml(option)}</option>`;
+                    });
+                    html += `</select>`;
+                } else if (field.type === 'directory') {
+                    html += `<select class="form-select form-select-sm value-filter-field" data-key="${key}">`;
+                    html += renderDirectoryFieldOptions(field, '');
+                    html += `</select>`;
+                    loadDirectoryValuesForField(field, '');
+                } else if (field.type === 'date') {
+                    html += `<input type="date" class="form-control form-control-sm value-filter-field" data-key="${key}">`;
+                } else if (field.type === 'time') {
+                    html += `<input type="time" class="form-control form-control-sm value-filter-field" data-key="${key}">`;
+                } else if (field.type === 'number') {
+                    html += `<input type="number" step="any" class="form-control form-control-sm value-filter-field" data-key="${key}" placeholder="Равно">`;
+                } else {
+                    html += `<input type="text" class="form-control form-control-sm value-filter-field" data-key="${key}" placeholder="Содержит">`;
+                }
+
+                html += `</div>`;
+            });
+
+            $('#valueFilters').html(html);
+            $('#valueFiltersCard').removeClass('d-none');
+            initSearchableSelects(document.getElementById('valueFilters'));
+        }
+
+        function collectValueFilters() {
+            let filters = {};
+
+            $('.value-filter-field').each(function () {
+                let key = $(this).data('key');
+                let value = $(this).val();
+
+                if (key && value !== null && String(value).trim() !== '') {
+                    filters[key] = String(value).trim();
+                }
+            });
+
+            return filters;
+        }
+
         function loadValues(page = 1) {
             if (!selectedDirectoryId) {
                 return;
@@ -456,7 +602,8 @@
                 method: 'GET',
                 data: {
                     page: page,
-                    search: $('#valueSearchInput').val()
+                    search: $('#valueSearchInput').val(),
+                    filters: collectValueFilters()
                 },
                 success: function (response) {
                     selectedDirectoryData = response.directory;
@@ -466,6 +613,9 @@
                     $('#selectedDirectoryName').text(response.directory.name);
                     $('#selectedDirectoryDescription').text(response.directory.description || '');
                     $('#selectedDirectorySchemaSummary').text(schemaSummary(response.directory.schema || []));
+                    if (!$('#valueFilters').children().length) {
+                        renderValueFilters(response.directory.schema || []);
+                    }
 
                     renderValues(response.items);
                     renderValuesPagination(response.pagination);
@@ -489,6 +639,17 @@
 
                 if (value === null || value === undefined || value === '') {
                     return;
+                }
+
+                if (field.type === 'directory') {
+                    let values = directoryValuesCache[field.directory_id] || [];
+                    let directoryItem = values.find(function (entry) {
+                        return String(entry.id) === String(value);
+                    });
+
+                    if (directoryItem) {
+                        value = getDirectoryOptionLabel(field, directoryItem);
+                    }
                 }
 
                 lines.push(`${field.label}: ${value}`);
@@ -564,6 +725,8 @@
                 required: !!data?.required,
                 unique: !!data?.unique,
                 auto_generate: !!data?.auto_generate,
+                directory_id: data?.directory_id || '',
+                directory_display_field: data?.directory_display_field || '',
                 options: data?.options || []
             });
 
@@ -584,6 +747,8 @@
 
             schemaFields.forEach(function (field) {
                 let optionsText = field.options ? field.options.join('\n') : '';
+                let directoriesOptions = buildReferenceDirectoryOptions(field.directory_id);
+                let displayFieldOptions = buildReferenceDirectoryDisplayOptions(field.directory_id, field.directory_display_field);
 
                 html += `
                     <div class="card border-secondary mb-3 schema-field-card" data-uid="${field.uid}">
@@ -608,6 +773,7 @@
                                         <option value="time" ${field.type === 'time' ? 'selected' : ''}>Время</option>
                                         <option value="list" ${field.type === 'list' ? 'selected' : ''}>Список</option>
                                         <option value="qr" ${field.type === 'qr' ? 'selected' : ''}>QR/штрихкод</option>
+                                        <option value="directory" ${field.type === 'directory' ? 'selected' : ''}>Справочник</option>
                                     </select>
                                 </div>
 
@@ -639,6 +805,20 @@
                                     </div>
                                     <div class="form-text">Можно ввести вручную или оставить пустым для автоматического кода.</div>
                                 </div>
+
+                                <div class="col-md-6 schema-directory-block ${field.type === 'directory' ? '' : 'd-none'}">
+                                    <label class="form-label">Справочник</label>
+                                    <select class="form-select schema-directory">
+                                        ${directoriesOptions}
+                                    </select>
+                                </div>
+
+                                <div class="col-md-6 schema-directory-block ${field.type === 'directory' ? '' : 'd-none'}">
+                                    <label class="form-label">Поле для отображения</label>
+                                    <select class="form-select schema-directory-display">
+                                        ${displayFieldOptions}
+                                    </select>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -663,6 +843,8 @@
                     required: card.find('.schema-required').is(':checked'),
                     unique: card.find('.schema-unique').is(':checked'),
                     auto_generate: card.find('.schema-auto-generate').is(':checked'),
+                    directory_id: card.find('.schema-directory').val(),
+                    directory_display_field: card.find('.schema-directory-display').val(),
                     options: optionsText
                         .split('\n')
                         .map(item => item.trim())
@@ -691,6 +873,11 @@
 
                 if (field.type === 'qr') {
                     item.auto_generate = !!field.auto_generate;
+                }
+
+                if (field.type === 'directory') {
+                    item.directory_id = field.directory_id;
+                    item.directory_display_field = field.directory_display_field;
                 }
 
                 return item;
@@ -749,6 +936,11 @@
                             <button type="button" class="btn btn-outline-info generate-qr-value">Сгенерировать</button>
                         </div>
                     `;
+                } else if (field.type === 'directory') {
+                    html += `<select class="form-select value-data-field" data-key="${field.key}" ${required}>`;
+                    html += renderDirectoryFieldOptions(field, value);
+                    html += `</select>`;
+                    loadDirectoryValuesForField(field, value);
                 } else if (field.type === 'list') {
                     html += `<select class="form-select value-data-field" data-key="${field.key}" ${required}>`;
                     html += `<option value="">Выберите значение</option>`;
@@ -832,6 +1024,12 @@
             let card = $(this).closest('.schema-field-card');
             card.find('.schema-options-block').toggleClass('d-none', $(this).val() !== 'list');
             card.find('.schema-qr-block').toggleClass('d-none', $(this).val() !== 'qr');
+            card.find('.schema-directory-block').toggleClass('d-none', $(this).val() !== 'directory');
+        });
+
+        $(document).on('change', '.schema-directory', function () {
+            let card = $(this).closest('.schema-field-card');
+            card.find('.schema-directory-display').html(buildReferenceDirectoryDisplayOptions($(this).val(), ''));
         });
 
         $(document).on('click', '.generate-qr-value', function () {
@@ -938,6 +1136,8 @@
             e.preventDefault();
             selectedDirectoryId = $(this).data('id');
             $('#valueSearchInput').val('');
+            $('#valueFilters').html('');
+            $('#valueFiltersCard').addClass('d-none');
             loadDirectories(currentDirectoryPage);
             loadValues(1);
         });
@@ -1106,6 +1306,17 @@
             if (e.key === 'Enter') {
                 loadValues(1);
             }
+        });
+
+        $(document).on('change keyup', '.value-filter-field', function (e) {
+            if (e.type === 'change' || e.key === 'Enter') {
+                loadValues(1);
+            }
+        });
+
+        $('#resetValueFiltersBtn').on('click', function () {
+            $('.value-filter-field').val('').trigger('change.select2');
+            loadValues(1);
         });
 
         $(document).on('click', '.directory-page', function (e) {

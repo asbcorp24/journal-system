@@ -25,15 +25,45 @@
             min-height: calc(100vh - 56px);
             background: #020617;
             border-right: 1px solid #1e293b;
+            transition: width .18s ease, flex-basis .18s ease, max-width .18s ease;
+        }
+
+        .sidebar-toggle {
+            width: 100%;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            background: #0f172a;
+            color: #cbd5e1;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 14px;
+            margin-bottom: 12px;
+            transition: .15s ease;
+        }
+
+        .sidebar-toggle:hover {
+            background: #1e293b;
+            color: #ffffff;
         }
 
         .sidebar a {
             color: #cbd5e1;
             text-decoration: none;
-            display: block;
+            display: flex;
+            align-items: center;
+            gap: 10px;
             padding: 12px 16px;
             border-radius: 8px;
             margin-bottom: 5px;
+            white-space: nowrap;
+            overflow: hidden;
+            transition: .15s ease;
+        }
+
+        .sidebar a i,
+        .sidebar-toggle i {
+            flex: 0 0 auto;
         }
 
         .sidebar a:hover,
@@ -44,6 +74,7 @@
 
         .content {
             padding: 24px;
+            transition: width .18s ease, flex-basis .18s ease, max-width .18s ease;
         }
 
         .card {
@@ -134,6 +165,36 @@
             border-color: #38bdf8;
             box-shadow: 0 0 0 .2rem rgba(56, 189, 248, .2);
         }
+
+        @media (min-width: 768px) {
+            body.sidebar-collapsed .layout-sidebar {
+                flex: 0 0 72px;
+                width: 72px;
+                max-width: 72px;
+                padding-left: 10px !important;
+                padding-right: 10px !important;
+            }
+
+            body.sidebar-collapsed .layout-content {
+                flex: 1 1 0;
+                width: calc(100% - 72px);
+                max-width: calc(100% - 72px);
+            }
+
+            body.sidebar-collapsed .sidebar a,
+            body.sidebar-collapsed .sidebar-toggle {
+                justify-content: center;
+                gap: 0;
+                padding-left: 0;
+                padding-right: 0;
+                font-size: 0;
+            }
+
+            body.sidebar-collapsed .sidebar a i,
+            body.sidebar-collapsed .sidebar-toggle i {
+                font-size: 18px;
+            }
+        }
     </style>
 
     @stack('styles')
@@ -158,8 +219,18 @@
 
 <div class="container-fluid">
     <div class="row">
-        <div class="col-md-2 sidebar p-3">
-            <a href="{{ route('admin.users.index') }}" class="active">
+        <div class="col-md-2 sidebar layout-sidebar p-3" id="desktopSidebar">
+            <button type="button"
+                    class="sidebar-toggle"
+                    id="sidebarToggle"
+                    aria-label="Свернуть меню"
+                    title="Свернуть меню">
+                <i class="bi bi-layout-sidebar-inset"></i>
+                <span class="sidebar-toggle-label">Свернуть</span>
+            </button>
+
+            <a href="{{ route('admin.users.index') }}"
+               class="{{ request()->routeIs('admin.users.*') ? 'active' : '' }}">
                 <i class="bi bi-people"></i>
                 Пользователи
             </a>
@@ -198,7 +269,7 @@
             </a>
         </div>
 
-        <div class="col-md-10 content">
+        <div class="col-md-10 content layout-content" id="layoutContent">
             @yield('content')
         </div>
     </div>
@@ -222,6 +293,30 @@
         headers: {
             'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
         }
+    });
+
+    function applySidebarState(collapsed) {
+        $('body').toggleClass('sidebar-collapsed', collapsed);
+        $('#sidebarToggle')
+            .attr('aria-label', collapsed ? 'Раскрыть меню' : 'Свернуть меню')
+            .attr('title', collapsed ? 'Раскрыть меню' : 'Свернуть меню')
+            .find('.sidebar-toggle-label')
+            .text(collapsed ? 'Раскрыть' : 'Свернуть');
+    }
+
+    $(function () {
+        let collapsed = localStorage.getItem('adminSidebarCollapsed') === '1';
+        applySidebarState(collapsed);
+
+        $('#desktopSidebar a').each(function () {
+            $(this).attr('title', $.trim($(this).text()));
+        });
+
+        $('#sidebarToggle').on('click', function () {
+            collapsed = !$('body').hasClass('sidebar-collapsed');
+            localStorage.setItem('adminSidebarCollapsed', collapsed ? '1' : '0');
+            applySidebarState(collapsed);
+        });
     });
 
     function showToast(message, type = 'primary') {

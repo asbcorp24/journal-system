@@ -26,4 +26,5 @@ class Directory extends Model
     {
         return $this->belongsToMany(Division::class, 'directory_division');
     }
+
 }

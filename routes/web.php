@@ -137,6 +137,12 @@ Route::middleware('user.auth')->group(function () {
     Route::get('/directories/{directory}/values', [UserDirectoryController::class, 'valuesList'])
         ->name('user.directories.values.list');
 
+    Route::get('/directories/{directory}/print', [UserDirectoryController::class, 'print'])
+        ->name('user.directories.print');
+
+    Route::get('/directories/{directory}/barcodes', [UserDirectoryController::class, 'printBarcodes'])
+        ->name('user.directories.barcodes');
+
     Route::post('/directories/{directory}/values', [UserDirectoryController::class, 'storeValue'])
         ->name('user.directories.values.store');
 

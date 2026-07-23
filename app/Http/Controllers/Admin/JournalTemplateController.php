@@ -378,4 +378,5 @@ class JournalTemplateController extends Controller
 
         return $validated;
     }
+
 }

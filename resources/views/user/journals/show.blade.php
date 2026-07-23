@@ -448,6 +448,14 @@
             return field ? field.label : key;
         }
 
+        function getTodayDateValue() {
+            let now = new Date();
+            let month = String(now.getMonth() + 1).padStart(2, '0');
+            let day = String(now.getDate()).padStart(2, '0');
+
+            return `${now.getFullYear()}-${month}-${day}`;
+        }
+
         function getDirectoryOptionLabel(field, item) {
             if (!item) {
                 return '';
@@ -972,7 +980,7 @@
             $('#paginationLinks').html(html);
         }
 
-        function renderDynamicForm(data = {}) {
+        function renderDynamicForm(data = {}, useDefaultValues = false) {
             let html = '';
 
             schema.forEach(function (field) {
@@ -1005,6 +1013,10 @@
                 }
 
                 else if (field.type === 'date') {
+                    if (useDefaultValues && value === '') {
+                        value = getTodayDateValue();
+                    }
+
                     html += `
                     <input type="date"
                            class="form-control journal-field"
@@ -1148,14 +1160,14 @@
             return data;
         }
 
-        function clearEntryForm() {
+        function clearEntryForm(useDefaultValues = false) {
             $('#entryId').val('');
 
             if ($('#entryDivisionId').length) {
                 $('#entryDivisionId').val('');
             }
             $('#changeComment').val('');
-            renderDynamicForm({});
+            renderDynamicForm({}, useDefaultValues);
             setEntryFormReadonly(false);
         }
 
@@ -1171,7 +1183,7 @@
         }
 
         $('#addEntryBtn').on('click', function () {
-            clearEntryForm();
+            clearEntryForm(true);
 
             $('#entryModalTitle').text('Добавить запись');
             entryModal.show();

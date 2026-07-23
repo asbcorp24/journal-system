@@ -7,6 +7,7 @@ use App\Models\Directory;
 use App\Models\DirectoryValue;
 use App\Models\Division;
 use App\Support\DirectorySchema;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -16,8 +17,11 @@ class DirectoryController extends Controller
     public function index()
     {
         $divisions = Division::orderBy('name')->get();
+        $referenceDirectories = Directory::query()
+            ->orderBy('name')
+            ->get(['id', 'name', 'schema']);
 
-        return view('admin.directories.index', compact('divisions'));
+        return view('admin.directories.index', compact('divisions', 'referenceDirectories'));
     }
 
     public function list(Request $request)
@@ -156,6 +160,62 @@ class DirectoryController extends Controller
                 $q->where('value', 'like', "%{$search}%")
                     ->orWhere('code', 'like', "%{$search}%");
             });
+        }
+
+        $schema = $directory->schema ?? [];
+        $filters = $this->normalizeValueFilters($request->input('filters', []), $schema);
+
+        if (!empty($filters)) {
+            $filteredValues = $query->get()
+                ->filter(function (DirectoryValue $value) use ($filters, $schema) {
+                    return $this->matchesValueFilters($value, $filters, $schema);
+                })
+                ->values();
+
+            if ($request->boolean('all')) {
+                return response()->json([
+                    'success' => true,
+                    'directory' => $directory,
+                    'items' => $filteredValues->map(function (DirectoryValue $value) {
+                        return $this->serializeDirectoryValue($value);
+                    })->values(),
+                ]);
+            }
+
+            $page = max(1, (int) $request->input('page', 1));
+            $perPage = 10;
+            $values = new LengthAwarePaginator(
+                $filteredValues->forPage($page, $perPage)->values(),
+                $filteredValues->count(),
+                $perPage,
+                $page
+            );
+
+            return response()->json([
+                'success' => true,
+                'directory' => $directory,
+                'items' => $values->getCollection()->map(function (DirectoryValue $value) {
+                    return $this->serializeDirectoryValue($value);
+                })->values(),
+                'pagination' => [
+                    'current_page' => $values->currentPage(),
+                    'last_page' => $values->lastPage(),
+                    'per_page' => $values->perPage(),
+                    'total' => $values->total(),
+                    'from' => $values->firstItem(),
+                    'to' => $values->lastItem(),
+                ],
+            ]);
+        }
+
+        if ($request->boolean('all')) {
+            return response()->json([
+                'success' => true,
+                'directory' => $directory,
+                'items' => $query->get()->map(function (DirectoryValue $value) {
+                    return $this->serializeDirectoryValue($value);
+                })->values(),
+            ]);
         }
 
         $values = $query->paginate(10);
@@ -499,4 +559,56 @@ class DirectoryController extends Controller
     {
         return 'QR-' . now()->format('YmdHis') . '-' . strtoupper(substr(bin2hex(random_bytes(3)), 0, 6));
     }
+
+    private function normalizeValueFilters($rawFilters, array $schema): array
+    {
+        if (!is_array($rawFilters) || empty($schema)) {
+            return [];
+        }
+
+        $allowedKeys = collect($schema)
+            ->pluck('key')
+            ->filter()
+            ->map(fn ($key) => (string) $key)
+            ->all();
+
+        return collect($rawFilters)
+            ->filter(fn ($value, $key) => in_array((string) $key, $allowedKeys, true) && trim((string) $value) !== '')
+            ->map(fn ($value) => trim((string) $value))
+            ->all();
+    }
+
+    private function matchesValueFilters(DirectoryValue $value, array $filters, array $schema): bool
+    {
+        $data = is_array($value->data) ? $value->data : [];
+        $fieldsByKey = collect($schema)->keyBy('key');
+
+        foreach ($filters as $key => $expected) {
+            $field = $fieldsByKey->get($key, []);
+            $actual = $data[$key] ?? '';
+
+            if (!$this->matchesSingleValueFilter($actual, $expected, $field['type'] ?? 'text')) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private function matchesSingleValueFilter($actual, string $expected, string $type): bool
+    {
+        $actualText = mb_strtolower(trim((string) $actual));
+        $expectedText = mb_strtolower(trim($expected));
+
+        if ($expectedText === '') {
+            return true;
+        }
+
+        if (in_array($type, ['list', 'date', 'time', 'directory', 'number'], true)) {
+            return $actualText === $expectedText;
+        }
+
+        return mb_strpos($actualText, $expectedText) !== false;
+    }
+
 }

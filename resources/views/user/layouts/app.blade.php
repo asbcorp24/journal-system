@@ -31,7 +31,6 @@
 
     <div class="ms-auto d-flex align-items-center gap-3">
 
-
         <a href="{{ route('user.notifications.index') }}"
            class="btn btn-outline-light btn-sm position-relative">
             <i class="bi bi-bell"></i>
@@ -56,7 +55,16 @@
 
 <div class="container-fluid">
     <div class="row">
-        <div class="col-md-2 sidebar desktop-sidebar p-3">
+        <div class="col-md-2 sidebar desktop-sidebar layout-sidebar p-3" id="desktopSidebar">
+            <button type="button"
+                    class="sidebar-toggle"
+                    id="sidebarToggle"
+                    aria-label="Свернуть меню"
+                    title="Свернуть меню">
+                <i class="bi bi-layout-sidebar-inset"></i>
+                <span class="sidebar-toggle-label">Свернуть</span>
+            </button>
+
             <a href="{{ route('user.dashboard') }}"
                class="{{ request()->routeIs('user.dashboard') ? 'active' : '' }}">
                 <i class="bi bi-journal-text"></i>
@@ -98,7 +106,7 @@
             @endif
         </div>
 
-        <div class="col-12 col-md-10 content">
+        <div class="col-12 col-md-10 content layout-content" id="layoutContent">
             @yield('content')
         </div>
     </div>
@@ -201,6 +209,30 @@
         headers: {
             'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
         }
+    });
+
+    function applySidebarState(collapsed) {
+        $('body').toggleClass('sidebar-collapsed', collapsed);
+        $('#sidebarToggle')
+            .attr('aria-label', collapsed ? 'Раскрыть меню' : 'Свернуть меню')
+            .attr('title', collapsed ? 'Раскрыть меню' : 'Свернуть меню')
+            .find('.sidebar-toggle-label')
+            .text(collapsed ? 'Раскрыть' : 'Свернуть');
+    }
+
+    $(function () {
+        let collapsed = localStorage.getItem('userSidebarCollapsed') === '1';
+        applySidebarState(collapsed);
+
+        $('#desktopSidebar a').each(function () {
+            $(this).attr('title', $.trim($(this).text()));
+        });
+
+        $('#sidebarToggle').on('click', function () {
+            collapsed = !$('body').hasClass('sidebar-collapsed');
+            localStorage.setItem('userSidebarCollapsed', collapsed ? '1' : '0');
+            applySidebarState(collapsed);
+        });
     });
 
     function showToast(message, type = 'primary') {
@@ -418,15 +450,45 @@
         min-height: calc(100vh - 56px);
         background: #020617;
         border-right: 1px solid #1e293b;
+        transition: width .18s ease, flex-basis .18s ease, max-width .18s ease;
+    }
+
+    .sidebar-toggle {
+        width: 100%;
+        border: 1px solid #334155;
+        border-radius: 10px;
+        background: #0f172a;
+        color: #cbd5e1;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 14px;
+        margin-bottom: 12px;
+        transition: .15s ease;
+    }
+
+    .sidebar-toggle:hover {
+        background: #1e293b;
+        color: #ffffff;
     }
 
     .sidebar a {
         color: #cbd5e1;
         text-decoration: none;
-        display: block;
+        display: flex;
+        align-items: center;
+        gap: 10px;
         padding: 12px 16px;
         border-radius: 10px;
         margin-bottom: 6px;
+        white-space: nowrap;
+        overflow: hidden;
+        transition: .15s ease;
+    }
+
+    .sidebar a i,
+    .sidebar-toggle i {
+        flex: 0 0 auto;
     }
 
     .sidebar a:hover,
@@ -437,6 +499,7 @@
 
     .content {
         padding: 24px;
+        transition: width .18s ease, flex-basis .18s ease, max-width .18s ease;
     }
 
     .card {
@@ -589,6 +652,36 @@
         }
 
         .navbar-brand {
+            font-size: 18px;
+        }
+    }
+
+    @media (min-width: 768px) {
+        body.sidebar-collapsed .layout-sidebar {
+            flex: 0 0 72px;
+            width: 72px;
+            max-width: 72px;
+            padding-left: 10px !important;
+            padding-right: 10px !important;
+        }
+
+        body.sidebar-collapsed .layout-content {
+            flex: 1 1 0;
+            width: calc(100% - 72px);
+            max-width: calc(100% - 72px);
+        }
+
+        body.sidebar-collapsed .sidebar a,
+        body.sidebar-collapsed .sidebar-toggle {
+            justify-content: center;
+            gap: 0;
+            padding-left: 0;
+            padding-right: 0;
+            font-size: 0;
+        }
+
+        body.sidebar-collapsed .sidebar a i,
+        body.sidebar-collapsed .sidebar-toggle i {
             font-size: 18px;
         }
     }

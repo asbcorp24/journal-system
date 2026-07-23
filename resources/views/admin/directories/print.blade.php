@@ -53,7 +53,7 @@
                         $key = $field['key'] ?? null;
                         $data = is_array($value->data) ? $value->data : [];
                     @endphp
-                    <td>{{ $key ? ($data[$key] ?? '-') : '-' }}</td>
+                    <td>{{ $key ? \App\Support\DirectorySchema::formatFieldValue($field, $data[$key] ?? null) : '-' }}</td>
                 @endforeach
             @endif
             <td>{{ $value->code ?: '-' }}</td>

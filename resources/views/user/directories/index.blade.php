@@ -68,11 +68,34 @@
                             <div class="text-secondary small" id="selectedDirectoryDescription"></div>
                         </div>
 
-                        <div class="w-50">
+                        <div class="d-flex gap-2 align-items-center flex-wrap justify-content-end">
+                            <button type="button" class="btn btn-outline-light btn-sm" id="printDirectoryBtn" disabled>
+                                <i class="bi bi-printer"></i>
+                                Печать
+                            </button>
+
+                            <button type="button" class="btn btn-outline-warning btn-sm" id="printDirectoryBarcodesBtn" disabled>
+                                <i class="bi bi-upc-scan"></i>
+                                Штрихкоды
+                            </button>
+
                             <input type="text"
                                    id="directoryValuesSearchInput"
                                    class="form-control"
+                                   style="min-width: 220px;"
                                    placeholder="Поиск по значениям">
+                        </div>
+                    </div>
+
+                    <div class="card bg-dark border-secondary mb-3 d-none" id="directoryValueFiltersCard">
+                        <div class="card-body py-3">
+                            <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
+                                <div class="fw-semibold small">Фильтры по полям</div>
+                                <button type="button" class="btn btn-sm btn-outline-light" id="resetDirectoryValueFiltersBtn">
+                                    Сбросить фильтры
+                                </button>
+                            </div>
+                            <div class="row g-2" id="directoryValueFilters"></div>
                         </div>
                     </div>
 
@@ -98,6 +121,11 @@
                             </tr>
                             </tbody>
                         </table>
+                    </div>
+
+                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mt-3">
+                        <div class="text-secondary small" id="directoryValuesPaginationInfo"></div>
+                        <ul class="pagination mb-0" id="directoryValuesPaginationLinks"></ul>
                     </div>
                 </div>
             </div>
@@ -158,6 +186,8 @@
         let directories = @json($directories);
         let selectedDirectory = null;
         let currentDirectoryValues = [];
+        let directoryValuesCache = {};
+        let currentValuesPage = 1;
 
         function formatDateTime(value) {
             if (!value) {
@@ -171,6 +201,55 @@
             }
 
             return date.toLocaleString('ru-RU');
+        }
+
+        function findDirectoryDefinition(directoryId) {
+            return directories.find(function (directory) {
+                return String(directory.id) === String(directoryId || '');
+            }) || null;
+        }
+
+        function getDirectoryOptionLabel(field, item) {
+            if (!item) {
+                return '';
+            }
+
+            let displayField = field.directory_display_field || '';
+
+            if (displayField && item.data && item.data[displayField] !== undefined && item.data[displayField] !== null && item.data[displayField] !== '') {
+                return item.data[displayField];
+            }
+
+            return item.value || '';
+        }
+
+        function renderDirectoryFieldOptions(field, selectedValue) {
+            let html = '<option value="">Выберите значение</option>';
+            let values = directoryValuesCache[field.directory_id] || [];
+
+            values.forEach(function (item) {
+                let selected = String(selectedValue || '') === String(item.id) ? 'selected' : '';
+                html += `<option value="${item.id}" ${selected}>${escapeHtml(getDirectoryOptionLabel(field, item))}</option>`;
+            });
+
+            return html;
+        }
+
+        function loadDirectoryValuesForField(field, selectedValue) {
+            if (!field.directory_id || directoryValuesCache[field.directory_id]) {
+                return;
+            }
+
+            $.ajax({
+                url: `/directories/${field.directory_id}/values`,
+                method: 'GET',
+                data: { all: 1 },
+                success: function (response) {
+                    directoryValuesCache[field.directory_id] = response.items || [];
+                    $(`.directory-value-field[data-key="${field.key}"]`).html(renderDirectoryFieldOptions(field, selectedValue));
+                    $(`.directory-value-filter[data-key="${field.key}"]`).html(renderDirectoryFieldOptions(field, selectedValue));
+                }
+            });
         }
 
         function renderDirectories(items) {
@@ -220,6 +299,66 @@
 
             $('#selectedDirectoryTitle').text(selectedDirectory.name);
             $('#selectedDirectoryDescription').text(selectedDirectory.description || '');
+        }
+
+        function renderDirectoryValueFilters(schema) {
+            if (!schema || !schema.length) {
+                $('#directoryValueFiltersCard').addClass('d-none');
+                $('#directoryValueFilters').html('');
+                return;
+            }
+
+            let html = '';
+
+            schema.forEach(function (field) {
+                let key = escapeHtml(field.key || '');
+                let label = escapeHtml(field.label || field.key || '');
+                html += `<div class="col-md-4">`;
+                html += `<label class="form-label small mb-1">${label}</label>`;
+
+                if (field.type === 'list') {
+                    html += `<select class="form-select form-select-sm directory-value-filter" data-key="${key}">`;
+                    html += `<option value="">Все</option>`;
+                    (field.options || []).forEach(function (option) {
+                        html += `<option value="${escapeHtml(option)}">${escapeHtml(option)}</option>`;
+                    });
+                    html += `</select>`;
+                } else if (field.type === 'directory') {
+                    html += `<select class="form-select form-select-sm directory-value-filter" data-key="${key}">`;
+                    html += renderDirectoryFieldOptions(field, '');
+                    html += `</select>`;
+                    loadDirectoryValuesForField(field, '');
+                } else if (field.type === 'date') {
+                    html += `<input type="date" class="form-control form-control-sm directory-value-filter" data-key="${key}">`;
+                } else if (field.type === 'time') {
+                    html += `<input type="time" class="form-control form-control-sm directory-value-filter" data-key="${key}">`;
+                } else if (field.type === 'number') {
+                    html += `<input type="number" step="any" class="form-control form-control-sm directory-value-filter" data-key="${key}" placeholder="Равно">`;
+                } else {
+                    html += `<input type="text" class="form-control form-control-sm directory-value-filter" data-key="${key}" placeholder="Содержит">`;
+                }
+
+                html += `</div>`;
+            });
+
+            $('#directoryValueFilters').html(html);
+            $('#directoryValueFiltersCard').removeClass('d-none');
+            initSearchableSelects(document.getElementById('directoryValueFilters'));
+        }
+
+        function collectDirectoryValueFilters() {
+            let filters = {};
+
+            $('.directory-value-filter').each(function () {
+                let key = $(this).data('key');
+                let value = $(this).val();
+
+                if (key && value !== null && String(value).trim() !== '') {
+                    filters[key] = String(value).trim();
+                }
+            });
+
+            return filters;
         }
 
         function renderValuesTableHead(schema) {
@@ -277,6 +416,17 @@
                 if (schema.length) {
                     schema.forEach(function (field) {
                         let value = item.data && item.data[field.key] !== undefined ? item.data[field.key] : '';
+
+                        if (field.type === 'directory' && value !== null && value !== '') {
+                            let values = directoryValuesCache[field.directory_id] || [];
+                            let directoryItem = values.find(function (entry) {
+                                return String(entry.id) === String(value);
+                            });
+
+                            if (directoryItem) {
+                                value = getDirectoryOptionLabel(field, directoryItem);
+                            }
+                        }
                         html += `<td>${value === null || value === '' ? '<span class="text-secondary">—</span>' : escapeHtml(String(value))}</td>`;
                     });
                 } else {
@@ -305,11 +455,11 @@
         }
 
         function toggleAddButton() {
-            if (!canManageDirectoryValues) {
-                return;
-            }
+            $('#printDirectoryBtn, #printDirectoryBarcodesBtn').prop('disabled', !selectedDirectory);
 
-            $('#addDirectoryValueBtn').prop('disabled', !selectedDirectory);
+            if (canManageDirectoryValues) {
+                $('#addDirectoryValueBtn').prop('disabled', !selectedDirectory);
+            }
         }
 
         function loadDirectories() {
@@ -344,9 +494,11 @@
 
                     if (selectedDirectory) {
                         renderValuesTableHead(selectedDirectory.schema || []);
+                        renderDirectoryValueFilters(selectedDirectory.schema || []);
                         loadValues();
                     } else {
                         renderValuesTableHead([]);
+                        renderDirectoryValueFilters([]);
                         renderValues([]);
                     }
                 },
@@ -356,10 +508,37 @@
             });
         }
 
-        function loadValues() {
+        function renderValuesPagination(pagination) {
+            if (!pagination) {
+                $('#directoryValuesPaginationInfo').text('');
+                $('#directoryValuesPaginationLinks').html('');
+                return;
+            }
+
+            let info = pagination.total > 0
+                ? `Показано ${pagination.from}-${pagination.to} из ${pagination.total}`
+                : 'Нет записей';
+            let html = '';
+
+            for (let page = 1; page <= pagination.last_page; page++) {
+                let active = page === pagination.current_page ? 'active' : '';
+                html += `
+                    <li class="page-item ${active}">
+                        <button type="button" class="page-link directory-values-page" data-page="${page}">${page}</button>
+                    </li>
+                `;
+            }
+
+            $('#directoryValuesPaginationInfo').text(info);
+            $('#directoryValuesPaginationLinks').html(html);
+        }
+
+        function loadValues(page = 1) {
             if (!selectedDirectory) {
                 return;
             }
+
+            currentValuesPage = page;
 
             $('#directoryValuesBody').html(`
                 <tr>
@@ -373,15 +552,19 @@
                 url: `/directories/${selectedDirectory.id}/values`,
                 method: "GET",
                 data: {
-                    search: $('#directoryValuesSearchInput').val()
+                    page: page,
+                    search: $('#directoryValuesSearchInput').val(),
+                    filters: collectDirectoryValueFilters()
                 },
                 success: function (response) {
                     selectedDirectory = response.directory;
                     currentDirectoryValues = response.items || [];
+                    directoryValuesCache[selectedDirectory.id] = currentDirectoryValues;
                     renderDirectories(directories);
                     updateSelectedDirectoryInfo();
                     renderValuesTableHead(selectedDirectory.schema || []);
                     renderValues(currentDirectoryValues);
+                    renderValuesPagination(response.pagination);
                     toggleAddButton();
                 },
                 error: function (xhr) {
@@ -423,6 +606,11 @@
                     html += `<input type="date" class="form-control directory-value-field" data-key="${field.key}" ${required}>`;
                 } else if (field.type === 'time') {
                     html += `<input type="time" class="form-control directory-value-field" data-key="${field.key}" ${required}>`;
+                } else if (field.type === 'directory') {
+                    html += `<select class="form-select directory-value-field" data-key="${field.key}" ${required}>`;
+                    html += renderDirectoryFieldOptions(field, '');
+                    html += `</select>`;
+                    loadDirectoryValuesForField(field, '');
                 } else if (field.type === 'list') {
                     html += `<select class="form-select directory-value-field" data-key="${field.key}" ${required}>`;
                     html += `<option value="">Выберите значение</option>`;
@@ -470,6 +658,10 @@
                     value = String(value).substring(0, 5);
                 }
 
+                if (field.type === 'directory') {
+                    loadDirectoryValuesForField(field, value);
+                }
+
                 $(`.directory-value-field[data-key="${field.key}"]`).val(value);
             });
         }
@@ -506,8 +698,9 @@
             renderDirectories(directories);
             updateSelectedDirectoryInfo();
             renderValuesTableHead(selectedDirectory ? (selectedDirectory.schema || []) : []);
+            renderDirectoryValueFilters(selectedDirectory ? (selectedDirectory.schema || []) : []);
             toggleAddButton();
-            loadValues();
+            loadValues(1);
         });
 
         $('#searchDirectoriesBtn').on('click', function () {
@@ -527,8 +720,39 @@
 
         $('#directoryValuesSearchInput').on('keyup', function (e) {
             if (e.key === 'Enter') {
-                loadValues();
+                loadValues(1);
             }
+        });
+
+        $(document).on('change keyup', '.directory-value-filter', function (e) {
+            if (e.type === 'change' || e.key === 'Enter') {
+                loadValues(1);
+            }
+        });
+
+        $('#resetDirectoryValueFiltersBtn').on('click', function () {
+            $('.directory-value-filter').val('').trigger('change.select2');
+            loadValues(1);
+        });
+
+        $(document).on('click', '.directory-values-page', function () {
+            loadValues(Number($(this).data('page')) || 1);
+        });
+
+        $('#printDirectoryBtn').on('click', function () {
+            if (!selectedDirectory) {
+                return;
+            }
+
+            window.open(`/directories/${selectedDirectory.id}/print`, '_blank');
+        });
+
+        $('#printDirectoryBarcodesBtn').on('click', function () {
+            if (!selectedDirectory) {
+                return;
+            }
+
+            window.open(`/directories/${selectedDirectory.id}/barcodes`, '_blank');
         });
 
         if (canManageDirectoryValues) {
