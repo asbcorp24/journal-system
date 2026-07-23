@@ -402,6 +402,7 @@
                 key: data?.key || '',
                 label: data?.label || '',
                 type: data?.type || 'string',
+                tab: data?.tab || '',
                 required: data?.required || false,
                 filterable: data?.filterable || false,
                 directory_id: data?.directory_id || '',
@@ -454,6 +455,7 @@
                 field.key = $(`${prefix} .field-key`).val();
                 field.label = $(`${prefix} .field-label`).val();
                 field.type = $(`${prefix} .field-type`).val();
+                field.tab = $(`${prefix} .field-tab`).val();
                 field.required = $(`${prefix} .field-required`).is(':checked');
                 field.filterable = $(`${prefix} .field-filterable`).is(':checked');
                 field.directory_id = $(`${prefix} .field-directory`).val();
@@ -561,7 +563,15 @@
                                 </div>
                             </div>
 
-                            <div class="col-md-4">
+                            <div class="col-md-2">
+                                <label class="form-label">Вкладка</label>
+                                <input type="text"
+                                       class="form-control field-tab"
+                                       value="${escapeHtml(field.tab || '')}"
+                                       placeholder="Основное">
+                            </div>
+
+                            <div class="col-md-2">
                                 <label class="form-label">Название поля</label>
                                 <input type="text"
                                        class="form-control field-label"
@@ -741,6 +751,7 @@
                     key: key,
                     label: label,
                     type: type,
+                    tab: (card.find('.field-tab').val() || '').trim(),
                     required: card.find('.field-required').is(':checked') ? 1 : 0,
                     filterable: card.find('.field-filterable').is(':checked') ? 1 : 0
                 };
@@ -845,7 +856,7 @@
             renderFields();
         });
 
-        $(document).on('input change', '.field-label, .field-required, .field-filterable, .field-directory, .field-directory-display, .field-options, .field-formula, .field-validation-min, .field-validation-max, .field-validation-greater, .field-validation-less', function () {
+        $(document).on('input change', '.field-label, .field-tab, .field-required, .field-filterable, .field-directory, .field-directory-display, .field-options, .field-formula, .field-validation-min, .field-validation-max, .field-validation-greater, .field-validation-less', function () {
             updateSchemaPreview();
         });
 

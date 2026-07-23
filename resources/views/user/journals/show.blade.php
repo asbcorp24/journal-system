@@ -139,7 +139,7 @@
 
     <div class="modal fade" id="entryModal" tabindex="-1">
         <div class="modal-dialog modal-xl modal-dialog-scrollable" id="entryModalDialog">
-            <form class="modal-content" id="entryForm">
+            <form class="modal-content" id="entryForm" novalidate>
                 <div class="modal-header">
                     <h5 class="modal-title" id="entryModalTitle">
                         Добавить запись
@@ -980,29 +980,45 @@
             $('#paginationLinks').html(html);
         }
 
-        function renderDynamicForm(data = {}, useDefaultValues = false) {
-            let html = '';
+        function groupJournalFieldsByTab(fields) {
+            let tabs = [];
+            let indexes = {};
 
-            schema.forEach(function (field) {
-                let value = data[field.key] ?? '';
-                let requiredMark = field.required ? '<span class="text-danger">*</span>' : '';
-                let requiredAttr = field.required ? 'required' : '';
+            fields.forEach(function (field) {
+                let tabName = (field.tab || '').trim() || 'Основное';
 
-                html += `<div class="col-md-6">`;
-                html += `<label class="form-label">${escapeHtml(field.label)} ${requiredMark}</label>`;
+                if (indexes[tabName] === undefined) {
+                    indexes[tabName] = tabs.length;
+                    tabs.push({
+                        name: tabName,
+                        fields: []
+                    });
+                }
 
-                if (field.type === 'string') {
-                    html += `
+                tabs[indexes[tabName]].fields.push(field);
+            });
+
+            return tabs;
+        }
+
+        function renderJournalFieldControl(field, data = {}, useDefaultValues = false) {
+            let value = data[field.key] ?? '';
+            let requiredMark = field.required ? '<span class="text-danger">*</span>' : '';
+            let requiredAttr = field.required ? 'required' : '';
+            let html = `<div class="col-md-6">`;
+
+            html += `<label class="form-label">${escapeHtml(field.label)} ${requiredMark}</label>`;
+
+            if (field.type === 'string') {
+                html += `
                     <input type="text"
                            class="form-control journal-field"
                            data-key="${field.key}"
                            value="${escapeHtml(value)}"
                            ${requiredAttr}>
                 `;
-                }
-
-                else if (field.type === 'number') {
-                    html += `
+            } else if (field.type === 'number') {
+                html += `
                     <input type="number"
                            step="any"
                            class="form-control journal-field"
@@ -1010,86 +1026,76 @@
                            value="${escapeHtml(value)}"
                            ${requiredAttr}>
                 `;
+            } else if (field.type === 'date') {
+                if (useDefaultValues && value === '') {
+                    value = getTodayDateValue();
                 }
 
-                else if (field.type === 'date') {
-                    if (useDefaultValues && value === '') {
-                        value = getTodayDateValue();
-                    }
-
-                    html += `
+                html += `
                     <input type="date"
                            class="form-control journal-field"
                            data-key="${field.key}"
                            value="${escapeHtml(value)}"
                            ${requiredAttr}>
                 `;
-                }
-
-                else if (field.type === 'time') {
-                    html += `
+            } else if (field.type === 'time') {
+                html += `
                     <input type="time"
                            class="form-control journal-field"
                            data-key="${field.key}"
                            value="${escapeHtml(value)}"
                            ${requiredAttr}>
                 `;
-                }
-
-                else if (field.type === 'list') {
-                    html += `
+            } else if (field.type === 'list') {
+                html += `
                     <select class="form-select journal-field"
                             data-key="${field.key}"
                             ${requiredAttr}>
                         <option value="">Выберите значение</option>
                 `;
 
-                    let options = field.options || [];
+                (field.options || []).forEach(function (option) {
+                    let selected = String(value) === String(option) ? 'selected' : '';
 
-                    options.forEach(function (option) {
-                        let selected = String(value) === String(option) ? 'selected' : '';
-
-                        html += `
+                    html += `
                         <option value="${escapeHtml(option)}" ${selected}>
                             ${escapeHtml(option)}
                         </option>
                     `;
-                    });
+                });
 
-                    html += `</select>`;
-                }
-
-                else if (field.type === 'directory' || field.type === 'directory_text') {
-                    html += `<div class="input-group">`;
-                    html += `
+                html += `</select>`;
+            } else if (field.type === 'directory' || field.type === 'directory_text') {
+                html += `<div class="input-group">`;
+                html += `
                     <select class="form-select journal-field"
                             data-key="${field.key}"
                             ${requiredAttr}>
                         <option value="">Выберите значение</option>
                 `;
 
-                    let values = directoryValues[field.directory_id] || [];
+                let values = directoryValues[field.directory_id] || [];
 
-                    values.forEach(function (item) {
-                        let selected = '';
+                values.forEach(function (item) {
+                    let selected = '';
 
-                        if (field.type === 'directory') {
-                            selected = String(value) === String(item.id) ? 'selected' : '';
-                        } else {
-                            selected = String(value) === String(getDirectoryOptionLabel(field, item)) ? 'selected' : '';
-                        }
+                    if (field.type === 'directory') {
+                        selected = String(value) === String(item.id) ? 'selected' : '';
+                    } else {
+                        selected = String(value) === String(getDirectoryOptionLabel(field, item)) ? 'selected' : '';
+                    }
 
-                        html += `
+                    html += `
                         <option value="${item.id}" ${selected}>
                             ${escapeHtml(getDirectoryOptionLabel(field, item))}
                         </option>
                     `;
-                    });
+                });
 
-                    html += `</select>`;
+                html += `</select>`;
 
-                    if (getDirectoryQrKey(field)) {
-                        html += `
+                if (getDirectoryQrKey(field)) {
+                    html += `
                         <button type="button"
                                 class="btn btn-outline-info scan-directory-value-btn"
                                 data-field-key="${field.key}"
@@ -1097,10 +1103,10 @@
                             <i class="bi bi-upc-scan"></i>
                         </button>
                     `;
-                    }
+                }
 
-                    if (canManageDirectoryValues) {
-                        html += `
+                if (canManageDirectoryValues) {
+                    html += `
                         <button type="button"
                                 class="btn btn-outline-secondary add-directory-value-btn"
                                 data-field-key="${field.key}"
@@ -1110,42 +1116,84 @@
                             <i class="bi bi-plus-lg"></i>
                         </button>
                     `;
-                    }
-
-                    html += `</div>`;
                 }
 
-                else if (field.type === 'calc') {
-                    html += `
-        <input type="number"
-               step="any"
-               class="form-control journal-field calc-field"
-               data-key="${field.key}"
-               data-formula="${escapeHtml(field.formula || '')}"
-               value="${escapeHtml(value)}"
-               placeholder="${escapeHtml(field.formula || '')}"
-               readonly>
+                html += `</div>`;
+            } else if (field.type === 'calc') {
+                html += `
+                    <input type="number"
+                           step="any"
+                           class="form-control journal-field calc-field"
+                           data-key="${field.key}"
+                           data-formula="${escapeHtml(field.formula || '')}"
+                           value="${escapeHtml(value)}"
+                           placeholder="${escapeHtml(field.formula || '')}"
+                           readonly>
 
-        <div class="text-secondary small mt-1">
-            Формула: ${escapeHtml(field.formula || '')}
-        </div>
-    `;
-                }
-
-                else {
-                    html += `
+                    <div class="text-secondary small mt-1">
+                        Формула: ${escapeHtml(field.formula || '')}
+                    </div>
+                `;
+            } else {
+                html += `
                     <input type="text"
                            class="form-control journal-field"
                            data-key="${field.key}"
                            value="${escapeHtml(value)}"
                            ${requiredAttr}>
                 `;
-                }
+            }
 
-                html += `</div>`;
-            });
+            html += `</div>`;
+
+            return html;
+        }
+
+        function renderDynamicForm(data = {}, useDefaultValues = false) {
+            let tabs = groupJournalFieldsByTab(schema);
+            let html = '';
+
+            if (tabs.length > 1 || (tabs[0] && tabs[0].name !== 'Основное')) {
+                html += '<div class="col-12">';
+                html += '<ul class="nav nav-tabs mb-3" role="tablist">';
+
+                tabs.forEach(function (tab, index) {
+                    let active = index === 0 ? 'active' : '';
+                    html += `
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link ${active}" type="button" data-bs-toggle="tab" data-bs-target="#journal-entry-tab-${index}" role="tab">
+                                ${escapeHtml(tab.name)}
+                            </button>
+                        </li>
+                    `;
+                });
+
+                html += '</ul>';
+                html += '<div class="tab-content">';
+
+                tabs.forEach(function (tab, index) {
+                    let active = index === 0 ? 'show active' : '';
+                    html += `<div class="tab-pane fade ${active}" id="journal-entry-tab-${index}" role="tabpanel">`;
+                    html += '<div class="row g-3">';
+
+                    tab.fields.forEach(function (field) {
+                        html += renderJournalFieldControl(field, data, useDefaultValues);
+                    });
+
+                    html += '</div>';
+                    html += '</div>';
+                });
+
+                html += '</div>';
+                html += '</div>';
+            } else {
+                schema.forEach(function (field) {
+                    html += renderJournalFieldControl(field, data, useDefaultValues);
+                });
+            }
 
             $('#dynamicForm').html(html);
+            initSearchableSelects(document.getElementById('dynamicForm'));
             recalculateCalcFields();
         }
 

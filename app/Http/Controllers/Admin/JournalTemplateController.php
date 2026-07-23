@@ -264,6 +264,11 @@ class JournalTemplateController extends Controller
                     'calc',
                 ]),
             ],
+            'schema.*.tab' => [
+                'nullable',
+                'string',
+                'max:100',
+            ],
             'schema.*.required' => [
                 'nullable',
                 'boolean',
@@ -368,6 +373,7 @@ class JournalTemplateController extends Controller
                 'key' => $field['key'],
                 'label' => $field['label'],
                 'type' => $field['type'],
+                'tab' => trim((string)($field['tab'] ?? '')),
                 'required' => !empty($field['required']),
                 'filterable' => !empty($field['filterable']),
             ];
