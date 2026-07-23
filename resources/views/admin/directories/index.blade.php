@@ -236,7 +236,7 @@
 
     <div class="modal fade" id="valueModal" tabindex="-1">
         <div class="modal-dialog modal-lg modal-dialog-scrollable">
-            <form class="modal-content" id="valueForm">
+            <form class="modal-content" id="valueForm" novalidate>
                 <div class="modal-header">
                     <h5 class="modal-title" id="valueModalTitle">Добавить запись</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
@@ -744,6 +744,7 @@
                 key: data?.key || '',
                 label: data?.label || '',
                 type: data?.type || 'text',
+                tab: data?.tab || '',
                 required: !!data?.required,
                 unique: !!data?.unique,
                 auto_generate: !!data?.auto_generate,
@@ -776,14 +777,19 @@
                     <div class="card border-secondary mb-3 schema-field-card" data-uid="${field.uid}">
                         <div class="card-body">
                             <div class="row g-3">
-                                <div class="col-md-4">
+                                <div class="col-md-3">
                                     <label class="form-label">Название</label>
                                     <input type="text" class="form-control schema-label" value="${escapeHtml(field.label)}">
                                 </div>
 
-                                <div class="col-md-3">
+                                <div class="col-md-2">
                                     <label class="form-label">Ключ</label>
                                     <input type="text" class="form-control schema-key" value="${escapeHtml(field.key)}" placeholder="title">
+                                </div>
+
+                                <div class="col-md-2">
+                                    <label class="form-label">Вкладка</label>
+                                    <input type="text" class="form-control schema-tab" value="${escapeHtml(field.tab || '')}" placeholder="Основное">
                                 </div>
 
                                 <div class="col-md-3">
@@ -861,6 +867,7 @@
                     uid: Number(card.data('uid')),
                     label: (card.find('.schema-label').val() || '').trim(),
                     key: (card.find('.schema-key').val() || '').trim(),
+                    tab: (card.find('.schema-tab').val() || '').trim(),
                     type: card.find('.schema-type').val(),
                     required: card.find('.schema-required').is(':checked'),
                     unique: card.find('.schema-unique').is(':checked'),
@@ -885,6 +892,7 @@
                     label: field.label,
                     key: field.key,
                     type: field.type,
+                    tab: field.tab || '',
                     required: field.required,
                     unique: field.unique
                 };
@@ -922,6 +930,73 @@
             renderValueFields({}, selectedDirectoryData ? selectedDirectoryData.schema || [] : []);
         }
 
+        function groupSchemaFieldsByTab(schema) {
+            let tabs = [];
+            let indexes = {};
+
+            schema.forEach(function (field) {
+                let tabName = (field.tab || '').trim() || 'Основное';
+
+                if (indexes[tabName] === undefined) {
+                    indexes[tabName] = tabs.length;
+                    tabs.push({
+                        name: tabName,
+                        fields: []
+                    });
+                }
+
+                tabs[indexes[tabName]].fields.push(field);
+            });
+
+            return tabs;
+        }
+
+        function renderValueFieldControl(field, value) {
+            let required = field.required ? 'required' : '';
+            let requiredMark = field.required ? '<span class="text-danger">*</span>' : '';
+            let html = `<div class="mb-3">`;
+
+            html += `<label class="form-label">${escapeHtml(field.label)} ${requiredMark}</label>`;
+
+            if (field.type === 'number') {
+                html += `<input type="number" step="any" class="form-control value-data-field" data-key="${field.key}" value="${escapeHtml(value)}" ${required}>`;
+            } else if (field.type === 'date') {
+                html += `<input type="date" class="form-control value-data-field" data-key="${field.key}" value="${escapeHtml(value)}" ${required}>`;
+            } else if (field.type === 'time') {
+                html += `<input type="time" class="form-control value-data-field" data-key="${field.key}" value="${escapeHtml(String(value || '').substring(0, 5))}" ${required}>`;
+            } else if (field.type === 'qr') {
+                let qrRequired = field.auto_generate ? '' : required;
+                let placeholder = field.auto_generate ? 'Оставьте пустым для автогенерации' : 'Введите QR/штрихкод';
+                html += `
+                    <div class="input-group">
+                        <input type="text" class="form-control value-data-field" data-key="${field.key}" value="${escapeHtml(value)}" placeholder="${placeholder}" ${qrRequired}>
+                        <button type="button" class="btn btn-outline-info generate-qr-value">Сгенерировать</button>
+                    </div>
+                `;
+            } else if (field.type === 'directory') {
+                html += `<select class="form-select value-data-field" data-key="${field.key}" ${required}>`;
+                html += renderDirectoryFieldOptions(field, value);
+                html += `</select>`;
+                loadDirectoryValuesForField(field, value);
+            } else if (field.type === 'list') {
+                html += `<select class="form-select value-data-field" data-key="${field.key}" ${required}>`;
+                html += `<option value="">Выберите значение</option>`;
+
+                (field.options || []).forEach(function (option) {
+                    let selected = String(value) === String(option) ? 'selected' : '';
+                    html += `<option value="${escapeHtml(option)}" ${selected}>${escapeHtml(option)}</option>`;
+                });
+
+                html += `</select>`;
+            } else {
+                html += `<input type="text" class="form-control value-data-field" data-key="${field.key}" value="${escapeHtml(value)}" ${required}>`;
+            }
+
+            html += `</div>`;
+
+            return html;
+        }
+
         function renderValueFields(data = {}, schema = []) {
             if (!schema.length) {
                 $('#valueDynamicFields').html(`
@@ -933,54 +1008,42 @@
                 return;
             }
 
+            let tabs = groupSchemaFieldsByTab(schema);
             let html = '';
 
-            schema.forEach(function (field) {
-                let value = data[field.key] ?? '';
-                let required = field.required ? 'required' : '';
-                let requiredMark = field.required ? '<span class="text-danger">*</span>' : '';
-
-                html += `<div class="mb-3">`;
-                html += `<label class="form-label">${escapeHtml(field.label)} ${requiredMark}</label>`;
-
-                if (field.type === 'number') {
-                    html += `<input type="number" step="any" class="form-control value-data-field" data-key="${field.key}" value="${escapeHtml(value)}" ${required}>`;
-                } else if (field.type === 'date') {
-                    html += `<input type="date" class="form-control value-data-field" data-key="${field.key}" value="${escapeHtml(value)}" ${required}>`;
-                } else if (field.type === 'time') {
-                    html += `<input type="time" class="form-control value-data-field" data-key="${field.key}" value="${escapeHtml(String(value || '').substring(0, 5))}" ${required}>`;
-                } else if (field.type === 'qr') {
-                    let qrRequired = field.auto_generate ? '' : required;
-                    let placeholder = field.auto_generate ? 'Оставьте пустым для автогенерации' : 'Введите QR/штрихкод';
+            if (tabs.length > 1 || tabs[0].name !== 'Основное') {
+                html += '<ul class="nav nav-tabs mb-3" role="tablist">';
+                tabs.forEach(function (tab, index) {
+                    let active = index === 0 ? 'active' : '';
                     html += `
-                        <div class="input-group">
-                            <input type="text" class="form-control value-data-field" data-key="${field.key}" value="${escapeHtml(value)}" placeholder="${placeholder}" ${qrRequired}>
-                            <button type="button" class="btn btn-outline-info generate-qr-value">Сгенерировать</button>
-                        </div>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link ${active}" type="button" data-bs-toggle="tab" data-bs-target="#directory-value-tab-${index}" role="tab">
+                                ${escapeHtml(tab.name)}
+                            </button>
+                        </li>
                     `;
-                } else if (field.type === 'directory') {
-                    html += `<select class="form-select value-data-field" data-key="${field.key}" ${required}>`;
-                    html += renderDirectoryFieldOptions(field, value);
-                    html += `</select>`;
-                    loadDirectoryValuesForField(field, value);
-                } else if (field.type === 'list') {
-                    html += `<select class="form-select value-data-field" data-key="${field.key}" ${required}>`;
-                    html += `<option value="">Выберите значение</option>`;
+                });
+                html += '</ul>';
+                html += '<div class="tab-content">';
 
-                    (field.options || []).forEach(function (option) {
-                        let selected = String(value) === String(option) ? 'selected' : '';
-                        html += `<option value="${escapeHtml(option)}" ${selected}>${escapeHtml(option)}</option>`;
+                tabs.forEach(function (tab, index) {
+                    let active = index === 0 ? 'show active' : '';
+                    html += `<div class="tab-pane fade ${active}" id="directory-value-tab-${index}" role="tabpanel">`;
+                    tab.fields.forEach(function (field) {
+                        html += renderValueFieldControl(field, data[field.key] ?? '');
                     });
+                    html += '</div>';
+                });
 
-                    html += `</select>`;
-                } else {
-                    html += `<input type="text" class="form-control value-data-field" data-key="${field.key}" value="${escapeHtml(value)}" ${required}>`;
-                }
-
-                html += `</div>`;
-            });
+                html += '</div>';
+            } else {
+                schema.forEach(function (field) {
+                    html += renderValueFieldControl(field, data[field.key] ?? '');
+                });
+            }
 
             $('#valueDynamicFields').html(html);
+            initSearchableSelects(document.getElementById('valueDynamicFields'));
         }
 
         function buildValuePayload() {

@@ -44,6 +44,7 @@ class DirectorySchema
                 'label' => $label,
                 'key' => $key,
                 'type' => $type,
+                'tab' => mb_substr(trim((string) ($field['tab'] ?? '')), 0, 100),
                 'required' => self::toBoolean($field['required'] ?? false),
                 'unique' => self::toBoolean($field['unique'] ?? false),
             ];

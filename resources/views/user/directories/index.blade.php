@@ -135,7 +135,7 @@
     @if(in_array(session('user_role'), ['foreman', 'admin']))
         <div class="modal fade" id="directoryValueModal" tabindex="-1">
             <div class="modal-dialog modal-lg modal-dialog-scrollable">
-                <form class="modal-content" id="directoryValueForm">
+                <form class="modal-content" id="directoryValueForm" novalidate>
                     <div class="modal-header">
                         <h5 class="modal-title" id="directoryValueModalTitle">Добавить значение</h5>
 
@@ -573,6 +573,64 @@
             });
         }
 
+        function groupSchemaFieldsByTab(schema) {
+            let tabs = [];
+            let indexes = {};
+
+            schema.forEach(function (field) {
+                let tabName = (field.tab || '').trim() || 'Основное';
+
+                if (indexes[tabName] === undefined) {
+                    indexes[tabName] = tabs.length;
+                    tabs.push({
+                        name: tabName,
+                        fields: []
+                    });
+                }
+
+                tabs[indexes[tabName]].fields.push(field);
+            });
+
+            return tabs;
+        }
+
+        function renderDirectoryValueFieldControl(field, value = '') {
+            let required = field.required ? 'required' : '';
+            let requiredMark = field.required ? ' <span class="text-danger">*</span>' : '';
+            let html = `<div class="mb-3">`;
+
+            html += `<label class="form-label">${escapeHtml(field.label)}${requiredMark}</label>`;
+
+            if (field.type === 'number') {
+                html += `<input type="number" step="any" class="form-control directory-value-field" data-key="${field.key}" value="${escapeHtml(value)}" ${required}>`;
+            } else if (field.type === 'date') {
+                html += `<input type="date" class="form-control directory-value-field" data-key="${field.key}" value="${escapeHtml(value)}" ${required}>`;
+            } else if (field.type === 'time') {
+                html += `<input type="time" class="form-control directory-value-field" data-key="${field.key}" value="${escapeHtml(String(value || '').substring(0, 5))}" ${required}>`;
+            } else if (field.type === 'directory') {
+                html += `<select class="form-select directory-value-field" data-key="${field.key}" ${required}>`;
+                html += renderDirectoryFieldOptions(field, value);
+                html += `</select>`;
+                loadDirectoryValuesForField(field, value);
+            } else if (field.type === 'list') {
+                html += `<select class="form-select directory-value-field" data-key="${field.key}" ${required}>`;
+                html += `<option value="">Выберите значение</option>`;
+
+                (field.options || []).forEach(function (option) {
+                    let selected = String(value) === String(option) ? 'selected' : '';
+                    html += `<option value="${escapeHtml(option)}" ${selected}>${escapeHtml(option)}</option>`;
+                });
+
+                html += `</select>`;
+            } else {
+                html += `<input type="text" class="form-control directory-value-field" data-key="${field.key}" value="${escapeHtml(value)}" ${required}>`;
+            }
+
+            html += `</div>`;
+
+            return html;
+        }
+
         function renderDirectoryValueForm() {
             if (!selectedDirectory) {
                 $('#directoryValueDynamicFields').html('');
@@ -592,40 +650,38 @@
             }
 
             let html = '';
+            let tabs = groupSchemaFieldsByTab(schema);
 
-            schema.forEach(function (field) {
-                let required = field.required ? 'required' : '';
-                let requiredMark = field.required ? ' <span class="text-danger">*</span>' : '';
+            if (tabs.length > 1 || tabs[0].name !== 'Основное') {
+                html += '<ul class="nav nav-tabs mb-3" role="tablist">';
+                tabs.forEach(function (tab, index) {
+                    let active = index === 0 ? 'active' : '';
+                    html += `
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link ${active}" type="button" data-bs-toggle="tab" data-bs-target="#directory-value-tab-${index}" role="tab">
+                                ${escapeHtml(tab.name)}
+                            </button>
+                        </li>
+                    `;
+                });
+                html += '</ul>';
+                html += '<div class="tab-content">';
 
-                html += `<div class="mb-3">`;
-                html += `<label class="form-label">${escapeHtml(field.label)}${requiredMark}</label>`;
-
-                if (field.type === 'number') {
-                    html += `<input type="number" step="any" class="form-control directory-value-field" data-key="${field.key}" ${required}>`;
-                } else if (field.type === 'date') {
-                    html += `<input type="date" class="form-control directory-value-field" data-key="${field.key}" ${required}>`;
-                } else if (field.type === 'time') {
-                    html += `<input type="time" class="form-control directory-value-field" data-key="${field.key}" ${required}>`;
-                } else if (field.type === 'directory') {
-                    html += `<select class="form-select directory-value-field" data-key="${field.key}" ${required}>`;
-                    html += renderDirectoryFieldOptions(field, '');
-                    html += `</select>`;
-                    loadDirectoryValuesForField(field, '');
-                } else if (field.type === 'list') {
-                    html += `<select class="form-select directory-value-field" data-key="${field.key}" ${required}>`;
-                    html += `<option value="">Выберите значение</option>`;
-
-                    (field.options || []).forEach(function (option) {
-                        html += `<option value="${escapeHtml(option)}">${escapeHtml(option)}</option>`;
+                tabs.forEach(function (tab, index) {
+                    let active = index === 0 ? 'show active' : '';
+                    html += `<div class="tab-pane fade ${active}" id="directory-value-tab-${index}" role="tabpanel">`;
+                    tab.fields.forEach(function (field) {
+                        html += renderDirectoryValueFieldControl(field);
                     });
+                    html += '</div>';
+                });
 
-                    html += `</select>`;
-                } else {
-                    html += `<input type="text" class="form-control directory-value-field" data-key="${field.key}" ${required}>`;
-                }
-
-                html += `</div>`;
-            });
+                html += '</div>';
+            } else {
+                schema.forEach(function (field) {
+                    html += renderDirectoryValueFieldControl(field);
+                });
+            }
 
             $('#directoryValueDynamicFields').html(html);
             initSearchableSelects(document.getElementById('directoryValueDynamicFields'));
