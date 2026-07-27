@@ -1038,6 +1038,11 @@
             let value = data[field.key] ?? '';
             let requiredMark = field.required ? '<span class="text-danger">*</span>' : '';
             let requiredAttr = field.required ? 'required' : '';
+
+            if (field.type === 'hidden') {
+                return '';
+            }
+
             let html = `<div class="col-md-6">`;
 
             html += `<label class="form-label">${escapeHtml(field.label)} ${requiredMark}</label>`;

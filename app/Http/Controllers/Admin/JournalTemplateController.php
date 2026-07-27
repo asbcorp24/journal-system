@@ -258,6 +258,7 @@ class JournalTemplateController extends Controller
                     'number',
                     'date',
                     'time',
+                    'hidden',
                     'list',
                     'directory',
                     'directory_text',
@@ -301,6 +302,11 @@ class JournalTemplateController extends Controller
                 'nullable',
                 'string',
                 'max:1000',
+            ],
+            'schema.*.default_value' => [
+                'nullable',
+                'string',
+                'max:2000',
             ],
             'schema.*.sql_query' => [
                 'nullable',
@@ -356,6 +362,13 @@ class JournalTemplateController extends Controller
 
         foreach ($validated['schema'] as $field) {
             $validation = $field['validation'] ?? [];
+
+            if (($field['type'] ?? '') === 'hidden' && !empty($field['required']) && trim((string) ($field['default_value'] ?? '')) === '') {
+                abort(response()->json([
+                    'success' => false,
+                    'message' => "У скрытого поля «{$field['label']}» должно быть значение по умолчанию",
+                ], 422));
+            }
 
             if (!empty($validation['greater_than_field']) && !in_array($validation['greater_than_field'], $keys, true)) {
                 abort(response()->json([

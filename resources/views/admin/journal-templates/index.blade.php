@@ -462,6 +462,7 @@
                 field.directory_id = $(`${prefix} .field-directory`).val();
                 field.directory_display_field = $(`${prefix} .field-directory-display`).val();
                 field.formula = $(`${prefix} .field-formula`).val();
+                field.default_value = $(`${prefix} .field-default-value`).val();
                 field.sql_query = $(`${prefix} .field-sql-query`).val();
                 field.validation = {
                     min: $(`${prefix} .field-validation-min`).val(),
@@ -588,6 +589,7 @@
                                     <option value="number" ${field.type === 'number' ? 'selected' : ''}>Число</option>
                                     <option value="date" ${field.type === 'date' ? 'selected' : ''}>Дата</option>
                                     <option value="time" ${field.type === 'time' ? 'selected' : ''}>Время</option>
+                                    <option value="hidden" ${field.type === 'hidden' ? 'selected' : ''}>Скрытое</option>
                                     <option value="list" ${field.type === 'list' ? 'selected' : ''}>Список</option>
                                     <option value="directory" ${field.type === 'directory' ? 'selected' : ''}>Справочник ID</option>
                                     <option value="directory_text" ${field.type === 'directory_text' ? 'selected' : ''}>Справочник текстом</option>
@@ -610,11 +612,23 @@
                                     <div class="form-check form-switch">
                                         <input class="form-check-input field-filterable"
                                                type="checkbox"
-                                               ${field.filterable ? 'checked' : ''}>
+                                               ${field.filterable ? 'checked' : ''}
+                                               ${field.type === 'hidden' ? 'disabled' : ''}>
                                         <label class="form-check-label">
                                             Фильтр
                                         </label>
                                     </div>
+                                </div>
+                            </div>
+
+                            <div class="col-md-6 field-default-block ${field.type === 'hidden' ? '' : 'd-none'}">
+                                <label class="form-label">Значение по умолчанию</label>
+                                <input type="text"
+                                       class="form-control field-default-value"
+                                       value="${escapeHtml(field.default_value || '')}"
+                                       placeholder="например system">
+                                <div class="text-secondary small mt-1">
+                                    Это значение сохранится автоматически. В форме ввода поле видно не будет.
                                 </div>
                             </div>
 
@@ -805,6 +819,11 @@
 
                 if (type === 'calc') {
                     item.formula = card.find('.field-formula').val() || '';
+                }
+
+                if (type === 'hidden') {
+                    item.default_value = card.find('.field-default-value').val() || '';
+                    item.filterable = 0;
                 }
 
                 if (type === 'sql') {

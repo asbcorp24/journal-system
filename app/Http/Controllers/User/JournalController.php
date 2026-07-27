@@ -1444,6 +1444,23 @@ class JournalController extends Controller
                 continue;
             }
 
+            if ($type === 'hidden') {
+                if (array_key_exists($key, $existingData) && $existingData[$key] !== null && $existingData[$key] !== '') {
+                    $result[$key] = $existingData[$key];
+                } else {
+                    $result[$key] = $this->resolveHiddenDefaultValue($field);
+                }
+
+                if ($required && ($result[$key] === null || $result[$key] === '')) {
+                    abort(response()->json([
+                        'success' => false,
+                        'message' => "Скрытое поле «{$label}» должно иметь значение по умолчанию",
+                    ], 422));
+                }
+
+                continue;
+            }
+
             if ($required && ($value === null || $value === '')) {
                 abort(response()->json([
                     'success' => false,
@@ -1538,6 +1555,13 @@ class JournalController extends Controller
         $this->validateNumericConstraints($schema, $result);
 
         return $result;
+    }
+
+    private function resolveHiddenDefaultValue(array $field): ?string
+    {
+        $value = trim((string) ($field['default_value'] ?? ''));
+
+        return $value === '' ? null : $value;
     }
 
     private function calculateMissingSqlFields(
