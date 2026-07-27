@@ -686,9 +686,25 @@
     <textarea class="form-control field-sql-query"
               rows="4"
               placeholder="SELECT value FROM table_name WHERE id = :field_key">${escapeHtml(field.sql_query || '')}</textarea>
-    <div class="text-secondary small mt-1">
-        Запрос должен быть одним <code>SELECT</code> и вернуть одну колонку. Можно использовать параметры из полей записи:
-        <code>:field_key</code>, например <code>:part</code> или <code>:quantity</code>.
+    <div class="alert alert-info small mt-2 mb-0">
+        <div class="fw-bold mb-1">Подсказка по SQL-полю</div>
+        <div>
+            Запрос выполняется при сохранении записи, если значение ещё не заполнено. При редактировании уже сохранённое
+            значение не пересчитывается автоматически; для этого в записи есть кнопка <b>Пересчитать</b>.
+        </div>
+        <ul class="mb-2 mt-2 ps-3">
+            <li>Нужен один безопасный <code>SELECT</code> без точки с запятой и дополнительных команд.</li>
+            <li>Запрос должен вернуть одну колонку из первой строки. Если строк нет, поле сохранится пустым.</li>
+            <li>Параметры из полей записи указываются по ключам: <code>:part</code>, <code>:quantity</code>, <code>:operation_date</code>.</li>
+            <li>Также доступны системные параметры: <code>:entry_id</code>, <code>:journal_id</code>, <code>:division_id</code>, <code>:user_id</code>.</li>
+        </ul>
+        <div>
+            Пример:
+            <code>SELECT name FROM directory_values WHERE id = :part</code>
+        </div>
+        <div class="text-muted mt-1">
+            Если нужен <code>:entry_id</code> для новой записи, сначала сохраните запись, потом нажмите <b>Пересчитать</b>.
+        </div>
     </div>
 </div>
 <div class="col-md-12 field-validation-block ${['number', 'calc'].includes(field.type) ? '' : 'd-none'}">
