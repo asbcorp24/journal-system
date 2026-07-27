@@ -18,12 +18,23 @@ class JournalPrintTemplateController extends Controller
             ->with('creator')
             ->orderBy('name')
             ->get();
+        $journalsForScript = $journals
+            ->map(function ($journal) {
+                return [
+                    'id' => $journal->id,
+                    'name' => $journal->name,
+                    'schema' => $journal->schema ?? [],
+                ];
+            })
+            ->values()
+            ->all();
 
         return view('admin.journal-print-templates.index', [
             'layout' => $this->pageLayout(),
             'pageTitle' => $this->pageTitle(),
             'routes' => $this->pageRoutes(),
             'journals' => $journals,
+            'journalsForScript' => $journalsForScript,
         ]);
     }
 

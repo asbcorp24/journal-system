@@ -152,13 +152,7 @@
 @push('scripts')
     <script>
         const routes = @json($routes);
-        const journals = @json($journals->map(function ($journal) {
-            return [
-                'id' => $journal->id,
-                'name' => $journal->name,
-                'schema' => $journal->schema ?? [],
-            ];
-        })->values()->all());
+        const journals = @json($journalsForScript);
 
         const systemColumns = [
             {type: 'system', key: 'number', label: '№'},
