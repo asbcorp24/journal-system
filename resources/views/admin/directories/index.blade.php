@@ -12,10 +12,16 @@
             </div>
         </div>
 
-        <button class="btn btn-primary" id="addDirectoryBtn">
-            <i class="bi bi-plus-lg"></i>
-            Создать справочник
-        </button>
+        <div class="d-flex gap-2">
+            <button class="btn btn-outline-light" id="importDirectoryTemplateBtn">
+                <i class="bi bi-upload"></i>
+                Импорт
+            </button>
+            <button class="btn btn-primary" id="addDirectoryBtn">
+                <i class="bi bi-plus-lg"></i>
+                Создать справочник
+            </button>
+        </div>
     </div>
 
     <div class="row g-4">
@@ -313,11 +319,40 @@
         </div>
     </div>
 
+    <div class="modal fade" id="importDirectoryTemplateModal" tabindex="-1">
+        <div class="modal-dialog">
+            <form class="modal-content" id="importDirectoryTemplateForm" enctype="multipart/form-data">
+                <div class="modal-header">
+                    <h5 class="modal-title">Импорт шаблона справочника</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+
+                <div class="modal-body">
+                    <label class="form-label">JSON-файл шаблона</label>
+                    <input type="file"
+                           class="form-control"
+                           name="template_file"
+                           accept=".json,.txt"
+                           required>
+                    <div class="text-secondary small mt-2">
+                        Будет создан новый справочник-копия. Подразделения и связанные справочники подтянутся по названию или коду.
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Отмена</button>
+                    <button type="submit" class="btn btn-primary">Импортировать</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
 @endsection
 
 @push('scripts')
     <script>
         let directoryModal = new bootstrap.Modal(document.getElementById('directoryModal'));
+        let importDirectoryTemplateModal = new bootstrap.Modal(document.getElementById('importDirectoryTemplateModal'));
         let valueModal = new bootstrap.Modal(document.getElementById('valueModal'));
         let csvModal = new bootstrap.Modal(document.getElementById('csvModal'));
 
@@ -528,6 +563,7 @@
                         <td>${authorName}</td>
                         <td class="text-end">
                             <button class="btn btn-sm btn-outline-info edit-directory" data-id="${item.id}" ${filledDisabled}><i class="bi bi-pencil"></i></button>
+                            <button class="btn btn-sm btn-outline-success export-directory-template" data-id="${item.id}"><i class="bi bi-download"></i></button>
                             <button class="btn btn-sm btn-outline-danger delete-directory" data-id="${item.id}" ${filledDisabled}><i class="bi bi-trash"></i></button>
                         </td>
                     </tr>
@@ -1238,6 +1274,11 @@
             valueModal.show();
         });
 
+        $('#importDirectoryTemplateBtn').on('click', function () {
+            $('#importDirectoryTemplateForm')[0].reset();
+            importDirectoryTemplateModal.show();
+        });
+
         $('#valueForm').on('submit', function (e) {
             e.preventDefault();
 
@@ -1315,6 +1356,11 @@
             });
         });
 
+        $(document).on('click', '.export-directory-template', function () {
+            let id = $(this).data('id');
+            window.open(directoryRoute('directoryExport', id), '_blank');
+        });
+
         $('#importCsvBtn').on('click', function () {
             if (!selectedDirectoryData) {
                 showToast('Сначала выберите справочник', 'warning');
@@ -1366,6 +1412,28 @@
                     csvModal.hide();
                     loadValues(1);
                     loadDirectories(currentDirectoryPage);
+                },
+                error: function (xhr) {
+                    showAjaxErrors(xhr);
+                }
+            });
+        });
+
+        $('#importDirectoryTemplateForm').on('submit', function (e) {
+            e.preventDefault();
+
+            let formData = new FormData(this);
+
+            $.ajax({
+                url: directoryRoute('directoryImport'),
+                method: 'POST',
+                data: formData,
+                processData: false,
+                contentType: false,
+                success: function (response) {
+                    showToast(response.message, 'success');
+                    importDirectoryTemplateModal.hide();
+                    loadDirectories(1);
                 },
                 error: function (xhr) {
                     showAjaxErrors(xhr);

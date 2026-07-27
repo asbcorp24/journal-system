@@ -55,6 +55,8 @@ class JournalTemplateEditorController extends AdminJournalTemplateController
             'list' => route('user.journal-templates.list'),
             'store' => route('user.journal-templates.store'),
             'template' => url('/journal-templates/__ID__'),
+            'templateExport' => url('/journal-templates/__ID__/export'),
+            'templateImport' => route('user.journal-templates.import'),
         ];
     }
 }

@@ -10,7 +10,9 @@ use App\Support\DirectorySchema;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class DirectoryController extends Controller
 {
@@ -181,6 +183,76 @@ class DirectoryController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Справочник удалён',
+        ]);
+    }
+
+    public function exportTemplate(Directory $directory)
+    {
+        $this->authorizeDirectoryAccess($directory);
+        $directory->load('divisions');
+
+        $payload = [
+            'kind' => 'directory_template',
+            'version' => 1,
+            'exported_at' => now()->toIso8601String(),
+            'template' => [
+                'name' => $directory->name,
+                'code' => $directory->code,
+                'description' => $directory->description,
+                'divisions' => $directory->divisions->map(function (Division $division) {
+                    return [
+                        'name' => $division->name,
+                    ];
+                })->values()->all(),
+                'schema' => $this->exportDirectorySchema($directory->schema ?? []),
+            ],
+        ];
+
+        $fileName = 'directory_template_' . Str::slug($directory->code ?: $directory->name, '_') . '.json';
+
+        return response()->streamDownload(function () use ($payload) {
+            echo json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        }, $fileName, [
+            'Content-Type' => 'application/json; charset=UTF-8',
+        ]);
+    }
+
+    public function importTemplate(Request $request)
+    {
+        $this->authorizePageAccess();
+
+        $request->validate([
+            'template_file' => ['required', 'file', 'mimes:json,txt'],
+        ]);
+
+        $payload = $this->readImportPayload($request, 'directory_template');
+        $template = $payload['template'] ?? [];
+        $input = $this->normalizeDirectoryTemplateInput([
+            'name' => $this->generateImportedDirectoryName((string) ($template['name'] ?? 'Справочник')),
+            'code' => $this->generateImportedDirectoryCode($template['code'] ?? null),
+            'description' => $template['description'] ?? null,
+            'division_ids' => $this->resolveDivisionIdsFromImport($template['divisions'] ?? []),
+            'schema' => $this->importDirectorySchema($template['schema'] ?? []),
+        ]);
+
+        $directory = DB::transaction(function () use ($input) {
+            $directory = Directory::create([
+                'name' => $input['name'],
+                'code' => $input['code'] ?? null,
+                'description' => $input['description'] ?? null,
+                'schema' => $input['schema'],
+                'created_by' => $this->currentDirectoryCreatorId(),
+            ]);
+
+            $directory->divisions()->sync($input['division_ids'] ?? []);
+
+            return $directory;
+        });
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Шаблон справочника импортирован',
+            'directory' => $directory,
         ]);
     }
 
@@ -707,12 +779,176 @@ class DirectoryController extends Controller
             'list' => route('admin.directories.list'),
             'store' => route('admin.directories.store'),
             'directory' => url('/admin/directories/__ID__'),
+            'directoryExport' => url('/admin/directories/__ID__/export-template'),
+            'directoryImport' => route('admin.directories.import-template'),
             'directoryValues' => url('/admin/directories/__ID__/values'),
             'directoryImportCsv' => url('/admin/directories/__ID__/import-csv'),
             'directoryPrint' => url('/admin/directories/__ID__/print'),
             'directoryBarcodes' => url('/admin/directories/__ID__/barcodes'),
             'value' => url('/admin/directory-values/__ID__'),
         ];
+    }
+
+    private function normalizeDirectoryTemplateInput(array $input, ?Directory $directory = null): array
+    {
+        $validated = validator($input, [
+            'name' => ['required', 'string', 'max:255', Rule::unique('directories', 'name')->ignore($directory?->id)],
+            'code' => ['nullable', 'string', 'max:255', Rule::unique('directories', 'code')->ignore($directory?->id)],
+            'description' => ['nullable', 'string'],
+            'division_ids' => ['nullable', 'array'],
+            'division_ids.*' => ['exists:divisions,id'],
+            'schema' => ['nullable', 'array'],
+        ])->validate();
+
+        $validated['schema'] = DirectorySchema::normalizeSchema($validated['schema'] ?? []);
+
+        return $validated;
+    }
+
+    private function exportDirectorySchema(array $schema): array
+    {
+        return collect($schema)->map(function ($field) {
+            if (($field['type'] ?? '') === 'directory' && !empty($field['directory_id'])) {
+                $directory = Directory::find((int) $field['directory_id']);
+                $field['directory_ref'] = [
+                    'code' => $directory?->code,
+                    'name' => $directory?->name,
+                ];
+                unset($field['directory_id']);
+            }
+
+            return $field;
+        })->values()->all();
+    }
+
+    private function importDirectorySchema(array $schema): array
+    {
+        return collect($schema)->map(function ($field) {
+            if (!is_array($field)) {
+                throw ValidationException::withMessages([
+                    'template_file' => ['Некорректное описание поля в импортируемом справочнике'],
+                ]);
+            }
+
+            if (($field['type'] ?? '') === 'directory') {
+                $directory = $this->findDirectoryByImportRef($field['directory_ref'] ?? []);
+
+                if (!$directory) {
+                    $fieldLabel = $field['label'] ?? ($field['key'] ?? 'поле');
+                    throw ValidationException::withMessages([
+                        'template_file' => ["Для поля «{$fieldLabel}» не найден связанный справочник при импорте"],
+                    ]);
+                }
+
+                $field['directory_id'] = $directory->id;
+            }
+
+            unset($field['directory_ref']);
+
+            return $field;
+        })->values()->all();
+    }
+
+    private function findDirectoryByImportRef($ref): ?Directory
+    {
+        if (!is_array($ref)) {
+            return null;
+        }
+
+        $code = trim((string) ($ref['code'] ?? ''));
+        $name = trim((string) ($ref['name'] ?? ''));
+
+        if ($code !== '') {
+            $directory = Directory::where('code', $code)->first();
+            if ($directory) {
+                return $directory;
+            }
+        }
+
+        if ($name !== '') {
+            return Directory::where('name', $name)->first();
+        }
+
+        return null;
+    }
+
+    private function resolveDivisionIdsFromImport(array $divisions): array
+    {
+        return collect($divisions)
+            ->map(function ($division) {
+                $name = trim((string) ($division['name'] ?? ''));
+
+                if ($name === '') {
+                    return null;
+                }
+
+                return Division::where('name', $name)->value('id');
+            })
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    private function generateImportedDirectoryName(string $baseName): string
+    {
+        $baseName = trim($baseName) !== '' ? trim($baseName) : 'Справочник';
+        $candidate = $baseName . ' (импорт)';
+        $suffix = 2;
+
+        while (Directory::where('name', $candidate)->exists()) {
+            $candidate = $baseName . ' (импорт ' . $suffix . ')';
+            $suffix++;
+        }
+
+        return $candidate;
+    }
+
+    private function generateImportedDirectoryCode(?string $baseCode): ?string
+    {
+        $baseCode = trim((string) $baseCode);
+
+        if ($baseCode === '') {
+            return null;
+        }
+
+        $candidate = $baseCode . '_import';
+        $suffix = 2;
+
+        while (Directory::where('code', $candidate)->exists()) {
+            $candidate = $baseCode . '_import_' . $suffix;
+            $suffix++;
+        }
+
+        return $candidate;
+    }
+
+    private function readImportPayload(Request $request, string $expectedKind): array
+    {
+        $file = $request->file('template_file');
+        $path = $file?->getRealPath();
+
+        if (!$path || !file_exists($path)) {
+            throw ValidationException::withMessages([
+                'template_file' => ['Файл импорта не найден'],
+            ]);
+        }
+
+        $decoded = json_decode((string) file_get_contents($path), true);
+
+        if (!is_array($decoded)) {
+            throw ValidationException::withMessages([
+                'template_file' => ['Не удалось прочитать JSON-файл'],
+            ]);
+        }
+
+        if (($decoded['kind'] ?? null) !== $expectedKind) {
+            throw ValidationException::withMessages([
+                'template_file' => ['Выбран файл другого типа шаблона'],
+            ]);
+        }
+
+        return $decoded;
     }
 
 }

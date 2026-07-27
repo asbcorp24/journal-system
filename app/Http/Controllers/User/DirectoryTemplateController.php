@@ -61,6 +61,8 @@ class DirectoryTemplateController extends AdminDirectoryController
             'list' => route('user.directory-templates.list'),
             'store' => route('user.directory-templates.store'),
             'directory' => url('/directory-templates/__ID__'),
+            'directoryExport' => url('/directory-templates/__ID__/export-template'),
+            'directoryImport' => route('user.directory-templates.import-template'),
             'directoryValues' => url('/directory-templates/__ID__/values'),
             'directoryImportCsv' => url('/directory-templates/__ID__/import-csv'),
             'directoryPrint' => url('/directory-templates/__ID__/print'),

@@ -8,7 +8,9 @@ use App\Models\Division;
 use App\Models\JournalTemplate;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class JournalTemplateController extends Controller
 {
@@ -171,6 +173,81 @@ class JournalTemplateController extends Controller
         ]);
     }
 
+    public function export(JournalTemplate $journalTemplate)
+    {
+        $this->authorizeJournalTemplateAccess($journalTemplate);
+        $journalTemplate->load('divisions');
+
+        $payload = [
+            'kind' => 'journal_template',
+            'version' => 1,
+            'exported_at' => now()->toIso8601String(),
+            'template' => [
+                'name' => $journalTemplate->name,
+                'code' => $journalTemplate->code,
+                'description' => $journalTemplate->description,
+                'is_active' => (bool) $journalTemplate->is_active,
+                'divisions' => $journalTemplate->divisions->map(function (Division $division) {
+                    return [
+                        'name' => $division->name,
+                    ];
+                })->values()->all(),
+                'schema' => $this->exportJournalSchema($journalTemplate->schema ?? []),
+            ],
+        ];
+
+        $fileName = 'journal_template_' . Str::slug($journalTemplate->code ?: $journalTemplate->name, '_') . '.json';
+
+        return response()->streamDownload(function () use ($payload) {
+            echo json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        }, $fileName, [
+            'Content-Type' => 'application/json; charset=UTF-8',
+        ]);
+    }
+
+    public function import(Request $request)
+    {
+        $this->authorizePageAccess();
+
+        $request->validate([
+            'template_file' => ['required', 'file', 'mimes:json,txt'],
+        ]);
+
+        $payload = $this->readImportPayload($request, 'journal_template');
+        $template = $payload['template'] ?? [];
+        $input = [
+            'name' => $this->generateImportedName((string) ($template['name'] ?? 'Журнал')),
+            'code' => $this->generateImportedCode($template['code'] ?? null),
+            'description' => $template['description'] ?? null,
+            'is_active' => !empty($template['is_active']),
+            'division_ids' => $this->resolveDivisionIdsFromImport($template['divisions'] ?? []),
+            'schema' => $this->importJournalSchema($template['schema'] ?? []),
+        ];
+
+        $validated = $this->normalizeTemplateInput($input);
+
+        $journalTemplate = DB::transaction(function () use ($validated, $input) {
+            $template = JournalTemplate::create([
+                'name' => $validated['name'],
+                'code' => $validated['code'] ?? null,
+                'description' => $validated['description'] ?? null,
+                'schema' => $validated['schema'],
+                'is_active' => !empty($input['is_active']),
+                'created_by' => $this->currentJournalTemplateCreatorId(),
+            ]);
+
+            $template->divisions()->sync($validated['division_ids'] ?? []);
+
+            return $template;
+        });
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Шаблон журнала импортирован',
+            'template' => $journalTemplate,
+        ]);
+    }
+
     protected function authorizePageAccess(): void
     {
     }
@@ -213,10 +290,17 @@ class JournalTemplateController extends Controller
             'list' => route('admin.journal-templates.list'),
             'store' => route('admin.journal-templates.store'),
             'template' => url('/admin/journal-templates/__ID__'),
+            'templateExport' => url('/admin/journal-templates/__ID__/export'),
+            'templateImport' => route('admin.journal-templates.import'),
         ];
     }
 
     private function validateTemplate(Request $request, ?int $ignoreId = null): array
+    {
+        return $this->normalizeTemplateInput($request->all(), $ignoreId);
+    }
+
+    private function normalizeTemplateInput(array $input, ?int $ignoreId = null): array
     {
         $rules = [
             'name' => [
@@ -350,7 +434,7 @@ class JournalTemplateController extends Controller
             ],
         ];
 
-        $validated = $request->validate($rules);
+        $validated = validator($input, $rules)->validate();
         $keys = collect($validated['schema'])->pluck('key')->toArray();
 
         if (count($keys) !== count(array_unique($keys))) {
@@ -481,6 +565,11 @@ class JournalTemplateController extends Controller
                 $item['formula'] = $field['formula'] ?? '';
             }
 
+            if ($field['type'] === 'hidden') {
+                $item['default_value'] = trim((string) ($field['default_value'] ?? ''));
+                $item['filterable'] = false;
+            }
+
             if ($field['type'] === 'sql') {
                 $sqlQuery = trim((string)($field['sql_query'] ?? ''));
 
@@ -500,6 +589,154 @@ class JournalTemplateController extends Controller
         $validated['schema'] = $schema;
 
         return $validated;
+    }
+
+    private function exportJournalSchema(array $schema): array
+    {
+        return collect($schema)->map(function ($field) {
+            if (in_array($field['type'] ?? '', ['directory', 'directory_text'], true) && !empty($field['directory_id'])) {
+                $directory = Directory::find((int) $field['directory_id']);
+
+                $field['directory_ref'] = [
+                    'code' => $directory?->code,
+                    'name' => $directory?->name,
+                ];
+                unset($field['directory_id']);
+            }
+
+            return $field;
+        })->values()->all();
+    }
+
+    private function importJournalSchema(array $schema): array
+    {
+        return collect($schema)->map(function ($field) {
+            if (!is_array($field)) {
+                throw ValidationException::withMessages([
+                    'template_file' => ['Некорректное описание поля в импортируемом журнале'],
+                ]);
+            }
+
+            if (in_array($field['type'] ?? '', ['directory', 'directory_text'], true)) {
+                $ref = $field['directory_ref'] ?? [];
+                $directory = $this->findDirectoryByImportRef($ref);
+
+                if (!$directory) {
+                    $fieldLabel = $field['label'] ?? ($field['key'] ?? 'поле');
+                    throw ValidationException::withMessages([
+                        'template_file' => ["Для поля «{$fieldLabel}» не найден связанный справочник при импорте"],
+                    ]);
+                }
+
+                $field['directory_id'] = $directory->id;
+            }
+
+            unset($field['directory_ref']);
+
+            return $field;
+        })->values()->all();
+    }
+
+    private function findDirectoryByImportRef($ref): ?Directory
+    {
+        if (!is_array($ref)) {
+            return null;
+        }
+
+        $code = trim((string) ($ref['code'] ?? ''));
+        $name = trim((string) ($ref['name'] ?? ''));
+
+        if ($code !== '') {
+            $directory = Directory::where('code', $code)->first();
+            if ($directory) {
+                return $directory;
+            }
+        }
+
+        if ($name !== '') {
+            return Directory::where('name', $name)->first();
+        }
+
+        return null;
+    }
+
+    private function resolveDivisionIdsFromImport(array $divisions): array
+    {
+        return collect($divisions)
+            ->map(function ($division) {
+                $name = trim((string) ($division['name'] ?? ''));
+
+                if ($name === '') {
+                    return null;
+                }
+
+                return Division::where('name', $name)->value('id');
+            })
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    private function generateImportedName(string $baseName): string
+    {
+        $baseName = trim($baseName) !== '' ? trim($baseName) : 'Журнал';
+        $candidate = $baseName . ' (импорт)';
+        $suffix = 2;
+
+        while (JournalTemplate::where('name', $candidate)->exists()) {
+            $candidate = $baseName . ' (импорт ' . $suffix . ')';
+            $suffix++;
+        }
+
+        return $candidate;
+    }
+
+    private function generateImportedCode(?string $baseCode): ?string
+    {
+        $baseCode = trim((string) $baseCode);
+
+        if ($baseCode === '') {
+            return null;
+        }
+
+        $candidate = $baseCode . '_import';
+        $suffix = 2;
+
+        while (JournalTemplate::where('code', $candidate)->exists()) {
+            $candidate = $baseCode . '_import_' . $suffix;
+            $suffix++;
+        }
+
+        return $candidate;
+    }
+
+    private function readImportPayload(Request $request, string $expectedKind): array
+    {
+        $file = $request->file('template_file');
+        $path = $file?->getRealPath();
+
+        if (!$path || !file_exists($path)) {
+            throw ValidationException::withMessages([
+                'template_file' => ['Файл импорта не найден'],
+            ]);
+        }
+
+        $decoded = json_decode((string) file_get_contents($path), true);
+
+        if (!is_array($decoded)) {
+            throw ValidationException::withMessages([
+                'template_file' => ['Не удалось прочитать JSON-файл'],
+            ]);
+        }
+
+        if (($decoded['kind'] ?? null) !== $expectedKind) {
+            throw ValidationException::withMessages([
+                'template_file' => ['Выбран файл другого типа шаблона'],
+            ]);
+        }
+
+        return $decoded;
     }
 
 }

@@ -167,6 +167,9 @@ Route::middleware('user.auth')->group(function () {
     Route::post('/directory-templates', [DirectoryTemplateController::class, 'store'])
         ->name('user.directory-templates.store');
 
+    Route::post('/directory-templates/import-template', [DirectoryTemplateController::class, 'importTemplate'])
+        ->name('user.directory-templates.import-template');
+
     Route::get('/directory-templates/{directory}', [DirectoryTemplateController::class, 'show'])
         ->name('user.directory-templates.show');
 
@@ -175,6 +178,9 @@ Route::middleware('user.auth')->group(function () {
 
     Route::delete('/directory-templates/{directory}', [DirectoryTemplateController::class, 'destroy'])
         ->name('user.directory-templates.destroy');
+
+    Route::get('/directory-templates/{directory}/export-template', [DirectoryTemplateController::class, 'exportTemplate'])
+        ->name('user.directory-templates.export-template');
 
     Route::get('/directory-templates/{directory}/values', [DirectoryTemplateController::class, 'valuesList'])
         ->name('user.directory-templates.values.list');
@@ -209,6 +215,9 @@ Route::middleware('user.auth')->group(function () {
     Route::post('/journal-templates', [JournalTemplateEditorController::class, 'store'])
         ->name('user.journal-templates.store');
 
+    Route::post('/journal-templates/import', [JournalTemplateEditorController::class, 'import'])
+        ->name('user.journal-templates.import');
+
     Route::get('/journal-templates/{journalTemplate}', [JournalTemplateEditorController::class, 'show'])
         ->name('user.journal-templates.show');
 
@@ -217,6 +226,9 @@ Route::middleware('user.auth')->group(function () {
 
     Route::delete('/journal-templates/{journalTemplate}', [JournalTemplateEditorController::class, 'destroy'])
         ->name('user.journal-templates.destroy');
+
+    Route::get('/journal-templates/{journalTemplate}/export', [JournalTemplateEditorController::class, 'export'])
+        ->name('user.journal-templates.export');
 
     Route::get('/journal-print-templates', [UserJournalPrintTemplateController::class, 'index'])
         ->name('user.journal-print-templates.index');
@@ -269,6 +281,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
 
         Route::get('/directories/list', [DirectoryController::class, 'list'])->name('directories.list');
         Route::post('/directories', [DirectoryController::class, 'store'])->name('directories.store');
+        Route::post('/directories/import-template', [DirectoryController::class, 'importTemplate'])->name('directories.import-template');
 
         Route::get('/directories/{directory}/values', [DirectoryController::class, 'valuesList'])->name('directories.values.list');
         Route::post('/directories/{directory}/values', [DirectoryController::class, 'valueStore'])->name('directories.values.store');
@@ -283,14 +296,16 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('/directories/{directory}', [DirectoryController::class, 'show'])->name('directories.show');
         Route::post('/directories/{directory}', [DirectoryController::class, 'update'])->name('directories.update');
         Route::delete('/directories/{directory}', [DirectoryController::class, 'destroy'])->name('directories.destroy');
-
+        Route::get('/directories/{directory}/export-template', [DirectoryController::class, 'exportTemplate'])->name('directories.export-template');
         Route::get('/journal-templates', [JournalTemplateController::class, 'index'])->name('journal-templates.index');
 
         Route::get('/journal-templates/list', [JournalTemplateController::class, 'list'])->name('journal-templates.list');
         Route::post('/journal-templates', [JournalTemplateController::class, 'store'])->name('journal-templates.store');
+        Route::post('/journal-templates/import', [JournalTemplateController::class, 'import'])->name('journal-templates.import');
         Route::get('/journal-templates/{journalTemplate}', [JournalTemplateController::class, 'show'])->name('journal-templates.show');
         Route::post('/journal-templates/{journalTemplate}', [JournalTemplateController::class, 'update'])->name('journal-templates.update');
         Route::delete('/journal-templates/{journalTemplate}', [JournalTemplateController::class, 'destroy'])->name('journal-templates.destroy');
+        Route::get('/journal-templates/{journalTemplate}/export', [JournalTemplateController::class, 'export'])->name('journal-templates.export');
 
         Route::get('/journal-print-templates', [JournalPrintTemplateController::class, 'index'])->name('journal-print-templates.index');
         Route::get('/journal-print-templates/list', [JournalPrintTemplateController::class, 'list'])->name('journal-print-templates.list');

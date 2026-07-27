@@ -12,10 +12,16 @@
             </div>
         </div>
 
-        <button class="btn btn-primary" id="addTemplateBtn">
-            <i class="bi bi-plus-lg"></i>
-            Создать журнал
-        </button>
+        <div class="d-flex gap-2">
+            <button class="btn btn-outline-light" id="importTemplateBtn">
+                <i class="bi bi-upload"></i>
+                Импорт
+            </button>
+            <button class="btn btn-primary" id="addTemplateBtn">
+                <i class="bi bi-plus-lg"></i>
+                Создать журнал
+            </button>
+        </div>
     </div>
 
     <div class="card mb-4">
@@ -204,11 +210,40 @@
         </div>
     </div>
 
+    <div class="modal fade" id="importTemplateModal" tabindex="-1">
+        <div class="modal-dialog">
+            <form class="modal-content" id="importTemplateForm" enctype="multipart/form-data">
+                <div class="modal-header">
+                    <h5 class="modal-title">Импорт шаблона журнала</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+
+                <div class="modal-body">
+                    <label class="form-label">JSON-файл шаблона</label>
+                    <input type="file"
+                           class="form-control"
+                           name="template_file"
+                           accept=".json,.txt"
+                           required>
+                    <div class="text-secondary small mt-2">
+                        Будет создан новый журнал-копия. Подразделения и связанные справочники подтянутся по названию или коду.
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Отмена</button>
+                    <button type="submit" class="btn btn-primary">Импортировать</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
 @endsection
 
 @push('scripts')
     <script>
         let templateModal = new bootstrap.Modal(document.getElementById('templateModal'));
+        let importTemplateModal = new bootstrap.Modal(document.getElementById('importTemplateModal'));
 
         let currentPage = 1;
         let fields = [];
@@ -328,6 +363,10 @@
                             <i class="bi bi-pencil"></i>
                         </button>
 
+                        <button class="btn btn-sm btn-outline-success export-template" data-id="${item.id}">
+                            <i class="bi bi-download"></i>
+                        </button>
+
                         <button class="btn btn-sm btn-outline-danger delete-template" data-id="${item.id}" ${usedDisabled}>
                             <i class="bi bi-trash"></i>
                         </button>
@@ -409,6 +448,7 @@
                 directory_display_field: data?.directory_display_field || '',
                 options: data?.options || [],
                 formula: data?.formula || '',
+                default_value: data?.default_value || '',
                 sql_query: data?.sql_query || '',
                 validation: data?.validation || {
                     min: '',
@@ -879,6 +919,11 @@
             templateModal.show();
         });
 
+        $('#importTemplateBtn').on('click', function () {
+            $('#importTemplateForm')[0].reset();
+            importTemplateModal.show();
+        });
+
         $('#addFieldBtn').on('click', function () {
             readFieldsFromDom();
             addField();
@@ -997,6 +1042,33 @@
                 success: function (response) {
                     showToast(response.message, 'success');
                     loadTemplates(currentPage);
+                },
+                error: function (xhr) {
+                    showAjaxErrors(xhr);
+                }
+            });
+        });
+
+        $(document).on('click', '.export-template', function () {
+            let id = $(this).data('id');
+            window.open(journalTemplateRoute('templateExport', id), '_blank');
+        });
+
+        $('#importTemplateForm').on('submit', function (e) {
+            e.preventDefault();
+
+            let formData = new FormData(this);
+
+            $.ajax({
+                url: journalTemplateRoute('templateImport'),
+                method: 'POST',
+                data: formData,
+                processData: false,
+                contentType: false,
+                success: function (response) {
+                    showToast(response.message, 'success');
+                    importTemplateModal.hide();
+                    loadTemplates(1);
                 },
                 error: function (xhr) {
                     showAjaxErrors(xhr);
