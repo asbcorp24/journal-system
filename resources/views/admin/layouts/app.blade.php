@@ -247,6 +247,12 @@
                 Журналы
             </a>
 
+            <a href="{{ route('admin.journal-print-templates.index') }}"
+               class="{{ request()->routeIs('admin.journal-print-templates.*') ? 'active' : '' }}">
+                <i class="bi bi-printer"></i>
+                Печать журналов
+            </a>
+
             <a href="{{ route('admin.directories.index') }}"
                class="{{ request()->routeIs('admin.directories.*') || request()->routeIs('admin.directory-values.*') ? 'active' : '' }}">
                 <i class="bi bi-list-check"></i>

@@ -7,6 +7,7 @@ use App\Models\Directory;
 use App\Models\DirectoryValue;
 use App\Models\Division;
 use App\Models\JournalEntry;
+use App\Models\JournalPrintTemplate;
 use App\Models\JournalTemplate;
 use App\Models\User;
 use App\Support\DirectorySchema;
@@ -285,6 +286,10 @@ class JournalController extends Controller
                 count($access['full_division_ids']) === 1
                 && (int) ($access['full_division_ids'][0] ?? 0) !== (int) session('user_division_id')
             );
+        $printTemplates = JournalPrintTemplate::where('journal_template_id', $journal->id)
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get();
 
         return view('user.journals.show', compact(
             'journal',
@@ -297,7 +302,8 @@ class JournalController extends Controller
             'canManageJournal',
             'canShowDeleted',
             'showDivisionFilter',
-            'showEntryDivisionSelector'
+            'showEntryDivisionSelector',
+            'printTemplates'
         ));
     }
     public function print(Request $request, JournalTemplate $journal)
@@ -353,13 +359,67 @@ class JournalController extends Controller
         $entries = $query->get();
 
         $directoryValues = $this->getDirectoryValuesForSchema($schema);
+        $printTemplate = $this->resolvePrintTemplate($request, $journal);
+        $printColumns = $this->resolvePrintColumns($journal, $printTemplate);
+        $printSettings = $printTemplate->settings ?? [
+            'orientation' => 'landscape',
+            'show_signatures' => true,
+        ];
 
         return view('user.journals.print', compact(
             'journal',
             'schema',
             'entries',
-            'directoryValues'
+            'directoryValues',
+            'printTemplate',
+            'printColumns',
+            'printSettings'
         ));
+    }
+
+    private function resolvePrintTemplate(Request $request, JournalTemplate $journal): ?JournalPrintTemplate
+    {
+        $templateId = $request->input('print_template_id');
+
+        if (!$templateId) {
+            return null;
+        }
+
+        return JournalPrintTemplate::where('journal_template_id', $journal->id)
+            ->where('is_active', true)
+            ->findOrFail($templateId);
+    }
+
+    private function resolvePrintColumns(JournalTemplate $journal, ?JournalPrintTemplate $printTemplate): array
+    {
+        $schema = $journal->schema ?? [];
+
+        if ($printTemplate && !empty($printTemplate->settings['columns'])) {
+            return $printTemplate->settings['columns'];
+        }
+
+        $columns = [
+            ['type' => 'system', 'key' => 'number', 'label' => '№'],
+            ['type' => 'system', 'key' => 'entry_date', 'label' => 'Дата'],
+        ];
+
+        foreach ($schema as $field) {
+            if (!empty($field['key'])) {
+                $columns[] = [
+                    'type' => 'field',
+                    'key' => $field['key'],
+                    'label' => $field['label'] ?? $field['key'],
+                ];
+            }
+        }
+
+        return array_merge($columns, [
+            ['type' => 'system', 'key' => 'created_by', 'label' => 'Добавил'],
+            ['type' => 'system', 'key' => 'division', 'label' => 'Подразделение'],
+            ['type' => 'system', 'key' => 'status', 'label' => 'Статус'],
+            ['type' => 'system', 'key' => 'checked_by', 'label' => 'Проверил'],
+            ['type' => 'system', 'key' => 'last_comment', 'label' => 'Комментарий'],
+        ]);
     }
     private function getDirectoryValuesForSchema(array $schema)
     {

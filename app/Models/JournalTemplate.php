@@ -30,6 +30,11 @@ class JournalTemplate extends Model
         return $this->hasMany(JournalEntry::class, 'journal_template_id');
     }
 
+    public function printTemplates()
+    {
+        return $this->hasMany(JournalPrintTemplate::class, 'journal_template_id');
+    }
+
     public function creator()
     {
         return $this->belongsTo(User::class, 'created_by');

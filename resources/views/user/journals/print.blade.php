@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Печать журнала — {{ $journal->name }}</title>
+    <title>Печать журнала — {{ $printTemplate->name ?? $journal->name }}</title>
 
     <style>
         * {
@@ -117,7 +117,7 @@
 
         @media print {
             @page {
-                size: A4 landscape;
+                size: A4 {{ ($printSettings['orientation'] ?? 'landscape') === 'portrait' ? 'portrait' : 'landscape' }};
                 margin: 8mm;
             }
 
@@ -154,14 +154,21 @@
 
 <div class="print-header">
     <div class="print-title">
-        {{ $journal->name }}
+        {{ ($printTemplate->title ?? null) ?: $journal->name }}
     </div>
 
     <div class="print-subtitle">
-        {{ $journal->description ?: 'Электронный производственный журнал' }}
+        {{ ($printTemplate->description ?? null) ?: ($journal->description ?: 'Электронный производственный журнал') }}
     </div>
 
     <div class="print-meta">
+        @if($printTemplate)
+            <div>
+                <strong>Шаблон печати:</strong>
+                {{ $printTemplate->name }}
+            </div>
+        @endif
+
         <div>
             <strong>Дата формирования:</strong>
             {{ now()->format('d.m.Y H:i') }}
@@ -184,100 +191,69 @@
 <table>
     <thead>
     <tr>
-        <th style="width: 40px;">№</th>
-        <th style="width: 90px;">Дата</th>
-
-        @foreach($schema as $field)
-            <th>{{ $field['label'] ?? $field['key'] ?? 'Поле' }}</th>
+        @foreach($printColumns as $column)
+            <th>{{ $column['label'] ?? $column['key'] ?? 'Поле' }}</th>
         @endforeach
-
-        <th>Добавил</th>
-        <th>Подразделение</th>
-        <th>Статус</th>
-        <th>Проверил</th>
-        <th>Комментарий</th>
     </tr>
     </thead>
 
     <tbody>
     @forelse($entries as $index => $entry)
         <tr>
-            <td>{{ $index + 1 }}</td>
-
-            <td>
-                {{ $entry->entry_date ? $entry->entry_date->format('d.m.Y') : '—' }}
-            </td>
-
-            @foreach($schema as $field)
+            @foreach($printColumns as $column)
                 @php
-                    $key = $field['key'] ?? null;
-                    $type = $field['type'] ?? 'string';
-                    $value = $key && is_array($entry->data) ? ($entry->data[$key] ?? null) : null;
+                    $columnType = $column['type'] ?? 'field';
+                    $columnKey = $column['key'] ?? null;
+                    $displayValue = '—';
 
-                    if ($value === null || $value === '') {
-                        $displayValue = '—';
-                    } elseif ($type === 'directory') {
-                        $list = $directoryValues[$field['directory_id'] ?? 0] ?? collect();
-                        $directoryItem = $list->firstWhere('id', (int)$value);
-                        $displayField = $field['directory_display_field'] ?? null;
-                        $displayValue = $directoryItem
-                            ? (($displayField && !empty($directoryItem->data[$displayField])) ? $directoryItem->data[$displayField] : $directoryItem->value)
-                            : $value;
+                    if ($columnType === 'system') {
+                        if ($columnKey === 'number') {
+                            $displayValue = $index + 1;
+                        } elseif ($columnKey === 'entry_date') {
+                            $displayValue = $entry->entry_date ? $entry->entry_date->format('d.m.Y') : '—';
+                        } elseif ($columnKey === 'created_by') {
+                            $displayValue = $entry->user->name ?? '—';
+                        } elseif ($columnKey === 'division') {
+                            $displayValue = $entry->division->name ?? '—';
+                        } elseif ($columnKey === 'status') {
+                            $displayValue = $entry->status === 'approved'
+                                ? 'Подтверждено'
+                                : ($entry->status === 'rejected' ? 'Отклонено' : 'На проверке');
+                        } elseif ($columnKey === 'checked_by') {
+                            $displayValue = $entry->checker->name ?? '—';
+
+                            if ($entry->checked_at && $displayValue !== '—') {
+                                $displayValue .= ' / ' . $entry->checked_at->format('d.m.Y H:i');
+                            }
+                        } elseif ($columnKey === 'last_comment') {
+                            $displayValue = $entry->lastComment ? $entry->lastComment->comment : '—';
+                        }
                     } else {
-                        $displayValue = is_array($value) ? json_encode($value, JSON_UNESCAPED_UNICODE) : $value;
+                        $field = collect($schema)->firstWhere('key', $columnKey) ?? [];
+                        $type = $field['type'] ?? 'string';
+                        $value = $columnKey && is_array($entry->data) ? ($entry->data[$columnKey] ?? null) : null;
+
+                        if ($value === null || $value === '') {
+                            $displayValue = '—';
+                        } elseif ($type === 'directory') {
+                            $list = $directoryValues[$field['directory_id'] ?? 0] ?? collect();
+                            $directoryItem = $list->firstWhere('id', (int)$value);
+                            $displayField = $field['directory_display_field'] ?? null;
+                            $displayValue = $directoryItem
+                                ? (($displayField && !empty($directoryItem->data[$displayField])) ? $directoryItem->data[$displayField] : $directoryItem->value)
+                                : $value;
+                        } else {
+                            $displayValue = is_array($value) ? json_encode($value, JSON_UNESCAPED_UNICODE) : $value;
+                        }
                     }
                 @endphp
 
                 <td>{{ $displayValue }}</td>
             @endforeach
-
-            <td>
-                {{ $entry->user->name ?? '—' }}
-            </td>
-
-            <td>
-                {{ $entry->division->name ?? '—' }}
-            </td>
-
-            <td>
-                @if($entry->status === 'approved')
-                    <span class="status-approved">Подтверждено</span>
-                @elseif($entry->status === 'rejected')
-                    <span class="status-rejected">Отклонено</span>
-                @else
-                    <span class="status-submitted">На проверке</span>
-                @endif
-            </td>
-
-            <td>
-                {{ $entry->checker->name ?? '—' }}
-
-                @if($entry->checked_at)
-                    <div class="small">
-                        {{ $entry->checked_at->format('d.m.Y H:i') }}
-                    </div>
-                @endif
-            </td>
-
-            <td>
-                @if($entry->lastComment)
-                    {{ $entry->lastComment->comment }}
-
-                    @if($entry->lastComment->user)
-                        <div class="small">
-                            {{ $entry->lastComment->user->name }}
-                            /
-                            {{ $entry->lastComment->created_at->format('d.m.Y H:i') }}
-                        </div>
-                    @endif
-                @else
-                    —
-                @endif
-            </td>
         </tr>
     @empty
         <tr>
-            <td colspan="{{ count($schema) + 8 }}" style="text-align:center;">
+            <td colspan="{{ max(1, count($printColumns)) }}" style="text-align:center;">
                 Записи не найдены
             </td>
         </tr>
@@ -285,19 +261,21 @@
     </tbody>
 </table>
 
-<div class="signatures">
-    <div class="signature-box">
-        <div class="signature-line">
-            Ответственный / подпись
+@if($printSettings['show_signatures'] ?? true)
+    <div class="signatures">
+        <div class="signature-box">
+            <div class="signature-line">
+                Ответственный / подпись
+            </div>
         </div>
-    </div>
 
-    <div class="signature-box">
-        <div class="signature-line">
-            Проверяющий / подпись
+        <div class="signature-box">
+            <div class="signature-line">
+                Проверяющий / подпись
+            </div>
         </div>
     </div>
-</div>
+@endif
 
 <script>
     window.addEventListener('load', function () {

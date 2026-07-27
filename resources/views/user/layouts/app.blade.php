@@ -98,6 +98,11 @@
                     <i class="bi bi-layout-text-window-reverse"></i>
                     Шаблоны журналов
                 </a>
+                <a href="{{ route('user.journal-print-templates.index') }}"
+                   class="{{ request()->routeIs('user.journal-print-templates.*') ? 'active' : '' }}">
+                    <i class="bi bi-printer"></i>
+                    Печать журналов
+                </a>
             @endif
             @if(session('user_role') === 'foreman' || session('user_role') === 'admin')
                 <a href="{{ route('user.review.index') }}"
@@ -177,6 +182,11 @@
                class="{{ request()->routeIs('user.journal-templates.*') ? 'active' : '' }}">
                 <i class="bi bi-layout-text-window-reverse"></i>
                 Шаблоны журналов
+            </a>
+            <a href="{{ route('user.journal-print-templates.index') }}"
+               class="{{ request()->routeIs('user.journal-print-templates.*') ? 'active' : '' }}">
+                <i class="bi bi-printer"></i>
+                Печать журналов
             </a>
         @endif
 

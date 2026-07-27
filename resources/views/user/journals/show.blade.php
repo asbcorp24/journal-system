@@ -110,6 +110,38 @@
         </div>
     </div>
 
+    <div class="modal fade" id="printTemplateModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Печать журнала</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <label class="form-label">Шаблон печати</label>
+                    <select id="printTemplateSelect" class="form-select">
+                        <option value="">Обычная печать журнала</option>
+                        @foreach($printTemplates as $template)
+                            <option value="{{ $template->id }}">
+                                {{ $template->name }}
+                            </option>
+                        @endforeach
+                    </select>
+                    <div class="text-secondary small mt-2">
+                        Фильтры, даты, поиск и подразделение берутся с текущего экрана журнала.
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Отмена</button>
+                    <button type="button" class="btn btn-primary" id="confirmPrintJournalBtn">
+                        <i class="bi bi-printer"></i>
+                        Печатать
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="card">
         <div class="card-body">
             <div class="table-responsive">
@@ -370,6 +402,7 @@
         const canManageDirectoryValues = userRole !== 'worker';
 
         let entryModal = new bootstrap.Modal(document.getElementById('entryModal'));
+        let printTemplateModal = new bootstrap.Modal(document.getElementById('printTemplateModal'));
         let directoryValueModal = new bootstrap.Modal(document.getElementById('directoryValueModal'));
         let currentPage = 1;
         let journalFullscreen = false;
@@ -1667,7 +1700,7 @@
 
             return html;
         }
-        $('#printJournalBtn').on('click', function () {
+        function buildPrintUrl(printTemplateId = null) {
             let params = new URLSearchParams();
 
             if ($('#dateFrom').val()) {
@@ -1700,12 +1733,30 @@
                 params.append('show_deleted', '1');
             }
 
+            if (printTemplateId) {
+                params.append('print_template_id', printTemplateId);
+            }
+
             let url = `/journals/${journalId}/print`;
 
             if (params.toString()) {
                 url += '?' + params.toString();
             }
 
+            return url;
+        }
+
+        $('#printJournalBtn').on('click', function () {
+            @if($printTemplates->count() > 0)
+                printTemplateModal.show();
+            @else
+                window.open(buildPrintUrl(), '_blank');
+            @endif
+        });
+
+        $('#confirmPrintJournalBtn').on('click', function () {
+            let url = buildPrintUrl($('#printTemplateSelect').val());
+            printTemplateModal.hide();
             window.open(url, '_blank');
         });
 

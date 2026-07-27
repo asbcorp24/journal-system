@@ -4,6 +4,7 @@ use App\Http\Controllers\Admin\DatabaseMaintenanceController;
 use App\Http\Controllers\Admin\DirectoryController;
 use App\Http\Controllers\Admin\DivisionController;
 use App\Http\Controllers\Admin\JournalTemplateController;
+use App\Http\Controllers\Admin\JournalPrintTemplateController;
 use App\Http\Controllers\Admin\ReportTemplateController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Auth\UserAuthController;
@@ -12,6 +13,7 @@ use App\Http\Controllers\User\DashboardController;
 use App\Http\Controllers\User\DirectoryController as UserDirectoryController;
 use App\Http\Controllers\User\DirectoryTemplateController;
 use App\Http\Controllers\User\JournalController;
+use App\Http\Controllers\User\JournalPrintTemplateController as UserJournalPrintTemplateController;
 use App\Http\Controllers\User\JournalTemplateEditorController;
 use App\Http\Controllers\User\NotificationController;
 use App\Http\Controllers\User\ReportController;
@@ -216,6 +218,24 @@ Route::middleware('user.auth')->group(function () {
     Route::delete('/journal-templates/{journalTemplate}', [JournalTemplateEditorController::class, 'destroy'])
         ->name('user.journal-templates.destroy');
 
+    Route::get('/journal-print-templates', [UserJournalPrintTemplateController::class, 'index'])
+        ->name('user.journal-print-templates.index');
+
+    Route::get('/journal-print-templates/list', [UserJournalPrintTemplateController::class, 'list'])
+        ->name('user.journal-print-templates.list');
+
+    Route::post('/journal-print-templates', [UserJournalPrintTemplateController::class, 'store'])
+        ->name('user.journal-print-templates.store');
+
+    Route::get('/journal-print-templates/{printTemplate}', [UserJournalPrintTemplateController::class, 'show'])
+        ->name('user.journal-print-templates.show');
+
+    Route::post('/journal-print-templates/{printTemplate}', [UserJournalPrintTemplateController::class, 'update'])
+        ->name('user.journal-print-templates.update');
+
+    Route::delete('/journal-print-templates/{printTemplate}', [UserJournalPrintTemplateController::class, 'destroy'])
+        ->name('user.journal-print-templates.destroy');
+
 });
 
 
@@ -272,6 +292,12 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::post('/journal-templates/{journalTemplate}', [JournalTemplateController::class, 'update'])->name('journal-templates.update');
         Route::delete('/journal-templates/{journalTemplate}', [JournalTemplateController::class, 'destroy'])->name('journal-templates.destroy');
 
+        Route::get('/journal-print-templates', [JournalPrintTemplateController::class, 'index'])->name('journal-print-templates.index');
+        Route::get('/journal-print-templates/list', [JournalPrintTemplateController::class, 'list'])->name('journal-print-templates.list');
+        Route::post('/journal-print-templates', [JournalPrintTemplateController::class, 'store'])->name('journal-print-templates.store');
+        Route::get('/journal-print-templates/{printTemplate}', [JournalPrintTemplateController::class, 'show'])->name('journal-print-templates.show');
+        Route::post('/journal-print-templates/{printTemplate}', [JournalPrintTemplateController::class, 'update'])->name('journal-print-templates.update');
+        Route::delete('/journal-print-templates/{printTemplate}', [JournalPrintTemplateController::class, 'destroy'])->name('journal-print-templates.destroy');
 
         Route::get('/reports', [ReportTemplateController::class, 'index'])->name('reports.index');
         Route::get('/reports/list', [ReportTemplateController::class, 'list'])->name('reports.list');
