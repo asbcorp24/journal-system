@@ -120,15 +120,32 @@
                     <div class="alert alert-info mt-4">
                         <div class="fw-bold mb-1">Подсказка по шаблону печати</div>
                         <div class="small">
-                            Отметьте колонки, которые должны попасть в печатную форму, и при необходимости поменяйте их
-                            названия. Порядок можно менять стрелками. Фильтры пользователь задаёт в журнале перед печатью.
+                            Можно использовать обычную таблицу с колонками или написать HTML-шаблон ниже. В HTML можно
+                            вставлять поля журнала через двойные фигурные скобки: <code>@{{ part }}</code>,
+                            <code>@{{ quantity }}</code>, <code>@{{ entry.date }}</code>.
+                        </div>
+                    </div>
+
+                    <div class="mt-4">
+                        <label class="form-label">HTML-шаблон печати</label>
+                        <textarea class="form-control font-monospace"
+                                  id="templateBodyHtml"
+                                  rows="9"
+                                  placeholder="<h2>Акт списания</h2>&#10;<p>Дата: {{ entry.date }}</p>&#10;<p>Деталь: {{ part }}</p>"></textarea>
+                        <div class="text-secondary small mt-2">
+                            Если HTML заполнен, при печати каждая запись будет выведена по этому шаблону. Значения полей
+                            подставляются безопасно, HTML из самих значений не выполняется.
+                        </div>
+                        <div class="mt-2">
+                            <div class="fw-bold small mb-1">Доступные переменные</div>
+                            <div class="d-flex flex-wrap gap-2 small" id="templateVariablesBox"></div>
                         </div>
                     </div>
 
                     <div class="d-flex justify-content-between align-items-center mt-4 mb-2">
                         <div>
                             <div class="fw-bold">Колонки печати</div>
-                            <div class="text-secondary small">Служебные поля и поля выбранного журнала.</div>
+                            <div class="text-secondary small">Используются для обычной табличной печати, если HTML-шаблон пустой.</div>
                         </div>
 
                         <div class="form-check form-switch">
@@ -270,6 +287,43 @@
             });
 
             $('#columnsBox').html(html || '<div class="text-secondary">Сначала выберите журнал</div>');
+            renderTemplateVariables(journal);
+        }
+
+        function renderTemplateVariables(journal) {
+            let variables = [
+                {key: 'entry.number', label: 'Номер строки'},
+                {key: 'entry.date', label: 'Дата записи'},
+                {key: 'entry.created_by', label: 'Кто добавил'},
+                {key: 'entry.division', label: 'Подразделение'},
+                {key: 'entry.status', label: 'Статус'},
+                {key: 'entry.checked_by', label: 'Проверил'},
+                {key: 'entry.comment', label: 'Комментарий'},
+                {key: 'journal.name', label: 'Название журнала'},
+                {key: 'print.date', label: 'Дата печати'},
+            ];
+
+            (journal?.schema || []).forEach(function (field) {
+                if (field.key) {
+                    variables.push({
+                        key: field.key,
+                        label: field.label || field.key,
+                    });
+                }
+            });
+
+            let html = variables.map(function (variable) {
+                return `
+                    <button type="button"
+                            class="btn btn-sm btn-outline-light insert-variable"
+                            data-variable="${escapeHtml(variable.key)}"
+                            title="${escapeHtml(variable.label)}">
+                        @{{ ${escapeHtml(variable.key)} }}
+                    </button>
+                `;
+            }).join('');
+
+            $('#templateVariablesBox').html(html || '<span class="text-secondary">Сначала выберите журнал</span>');
         }
 
         function readColumns() {
@@ -314,6 +368,7 @@
 
                 response.items.forEach(function (item) {
                     let columnsCount = item.settings?.columns?.length || 0;
+                    let hasHtml = !!(item.settings?.body_html || '').trim();
 
                     html += `
                         <tr>
@@ -322,7 +377,10 @@
                                 <div class="text-secondary small">${escapeHtml(item.title || 'Заголовок берётся из журнала')}</div>
                             </td>
                             <td>${escapeHtml(item.journal_template?.name || '—')}</td>
-                            <td>${columnsCount}</td>
+                            <td>
+                                ${hasHtml ? '<span class="badge bg-info me-1">HTML</span>' : ''}
+                                ${columnsCount} кол.
+                            </td>
                             <td>${escapeHtml(item.creator?.name || 'Суперадмин')}</td>
                             <td>
                                 <span class="badge ${item.is_active ? 'bg-success' : 'bg-secondary'}">
@@ -370,6 +428,7 @@
             $('#templateId').val('');
             $('#templateIsActive').prop('checked', true);
             $('#showSignatures').prop('checked', true);
+            $('#templateBodyHtml').val('');
             renderColumns([]);
         }
 
@@ -414,9 +473,22 @@
                 $('#templateOrientation').val(item.settings?.orientation || 'landscape');
                 $('#templateIsActive').prop('checked', !!item.is_active);
                 $('#showSignatures').prop('checked', !!item.settings?.show_signatures);
+                $('#templateBodyHtml').val(item.settings?.body_html || '');
                 renderColumns(item.settings?.columns || []);
                 templateModal.show();
             });
+        });
+
+        $(document).on('click', '.insert-variable', function () {
+            let textarea = document.getElementById('templateBodyHtml');
+            let token = `{{ ${$(this).data('variable')} }}`;
+            let start = textarea.selectionStart || 0;
+            let end = textarea.selectionEnd || 0;
+            let value = textarea.value;
+
+            textarea.value = value.substring(0, start) + token + value.substring(end);
+            textarea.focus();
+            textarea.selectionStart = textarea.selectionEnd = start + token.length;
         });
 
         $(document).on('click', '.delete-template', function () {
@@ -446,9 +518,10 @@
             let id = $('#templateId').val();
             let url = id ? templateRoute(id) : routes.store;
             let columns = readColumns();
+            let bodyHtml = $('#templateBodyHtml').val().trim();
 
-            if (!columns.length) {
-                showToast('Выберите хотя бы одну колонку для печати', 'warning');
+            if (!columns.length && !bodyHtml) {
+                showToast('Выберите хотя бы одну колонку или заполните HTML-шаблон', 'warning');
                 return;
             }
 
@@ -465,6 +538,7 @@
                     settings: {
                         orientation: $('#templateOrientation').val(),
                         show_signatures: $('#showSignatures').is(':checked') ? 1 : 0,
+                        body_html: bodyHtml,
                         columns,
                     },
                 },

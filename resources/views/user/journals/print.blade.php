@@ -104,6 +104,17 @@
             font-size: 11px;
         }
 
+        .template-entry {
+            margin-top: 14px;
+            page-break-inside: avoid;
+        }
+
+        .template-entry + .template-entry {
+            margin-top: 18px;
+            padding-top: 18px;
+            border-top: 1px dashed #999;
+        }
+
         .no-print {
             margin-bottom: 20px;
         }
@@ -188,78 +199,86 @@
     </div>
 </div>
 
-<table>
-    <thead>
-    <tr>
-        @foreach($printColumns as $column)
-            <th>{{ $column['label'] ?? $column['key'] ?? 'Поле' }}</th>
-        @endforeach
-    </tr>
-    </thead>
-
-    <tbody>
-    @forelse($entries as $index => $entry)
+@if(count($printHtmlEntries) > 0)
+    @foreach($printHtmlEntries as $htmlEntry)
+        <div class="template-entry">
+            {!! $htmlEntry !!}
+        </div>
+    @endforeach
+@else
+    <table>
+        <thead>
         <tr>
             @foreach($printColumns as $column)
-                @php
-                    $columnType = $column['type'] ?? 'field';
-                    $columnKey = $column['key'] ?? null;
-                    $displayValue = '—';
-
-                    if ($columnType === 'system') {
-                        if ($columnKey === 'number') {
-                            $displayValue = $index + 1;
-                        } elseif ($columnKey === 'entry_date') {
-                            $displayValue = $entry->entry_date ? $entry->entry_date->format('d.m.Y') : '—';
-                        } elseif ($columnKey === 'created_by') {
-                            $displayValue = $entry->user->name ?? '—';
-                        } elseif ($columnKey === 'division') {
-                            $displayValue = $entry->division->name ?? '—';
-                        } elseif ($columnKey === 'status') {
-                            $displayValue = $entry->status === 'approved'
-                                ? 'Подтверждено'
-                                : ($entry->status === 'rejected' ? 'Отклонено' : 'На проверке');
-                        } elseif ($columnKey === 'checked_by') {
-                            $displayValue = $entry->checker->name ?? '—';
-
-                            if ($entry->checked_at && $displayValue !== '—') {
-                                $displayValue .= ' / ' . $entry->checked_at->format('d.m.Y H:i');
-                            }
-                        } elseif ($columnKey === 'last_comment') {
-                            $displayValue = $entry->lastComment ? $entry->lastComment->comment : '—';
-                        }
-                    } else {
-                        $field = collect($schema)->firstWhere('key', $columnKey) ?? [];
-                        $type = $field['type'] ?? 'string';
-                        $value = $columnKey && is_array($entry->data) ? ($entry->data[$columnKey] ?? null) : null;
-
-                        if ($value === null || $value === '') {
-                            $displayValue = '—';
-                        } elseif ($type === 'directory') {
-                            $list = $directoryValues[$field['directory_id'] ?? 0] ?? collect();
-                            $directoryItem = $list->firstWhere('id', (int)$value);
-                            $displayField = $field['directory_display_field'] ?? null;
-                            $displayValue = $directoryItem
-                                ? (($displayField && !empty($directoryItem->data[$displayField])) ? $directoryItem->data[$displayField] : $directoryItem->value)
-                                : $value;
-                        } else {
-                            $displayValue = is_array($value) ? json_encode($value, JSON_UNESCAPED_UNICODE) : $value;
-                        }
-                    }
-                @endphp
-
-                <td>{{ $displayValue }}</td>
+                <th>{{ $column['label'] ?? $column['key'] ?? 'Поле' }}</th>
             @endforeach
         </tr>
-    @empty
-        <tr>
-            <td colspan="{{ max(1, count($printColumns)) }}" style="text-align:center;">
-                Записи не найдены
-            </td>
-        </tr>
-    @endforelse
-    </tbody>
-</table>
+        </thead>
+
+        <tbody>
+        @forelse($entries as $index => $entry)
+            <tr>
+                @foreach($printColumns as $column)
+                    @php
+                        $columnType = $column['type'] ?? 'field';
+                        $columnKey = $column['key'] ?? null;
+                        $displayValue = '—';
+
+                        if ($columnType === 'system') {
+                            if ($columnKey === 'number') {
+                                $displayValue = $index + 1;
+                            } elseif ($columnKey === 'entry_date') {
+                                $displayValue = $entry->entry_date ? $entry->entry_date->format('d.m.Y') : '—';
+                            } elseif ($columnKey === 'created_by') {
+                                $displayValue = $entry->user->name ?? '—';
+                            } elseif ($columnKey === 'division') {
+                                $displayValue = $entry->division->name ?? '—';
+                            } elseif ($columnKey === 'status') {
+                                $displayValue = $entry->status === 'approved'
+                                    ? 'Подтверждено'
+                                    : ($entry->status === 'rejected' ? 'Отклонено' : 'На проверке');
+                            } elseif ($columnKey === 'checked_by') {
+                                $displayValue = $entry->checker->name ?? '—';
+
+                                if ($entry->checked_at && $displayValue !== '—') {
+                                    $displayValue .= ' / ' . $entry->checked_at->format('d.m.Y H:i');
+                                }
+                            } elseif ($columnKey === 'last_comment') {
+                                $displayValue = $entry->lastComment ? $entry->lastComment->comment : '—';
+                            }
+                        } else {
+                            $field = collect($schema)->firstWhere('key', $columnKey) ?? [];
+                            $type = $field['type'] ?? 'string';
+                            $value = $columnKey && is_array($entry->data) ? ($entry->data[$columnKey] ?? null) : null;
+
+                            if ($value === null || $value === '') {
+                                $displayValue = '—';
+                            } elseif ($type === 'directory') {
+                                $list = $directoryValues[$field['directory_id'] ?? 0] ?? collect();
+                                $directoryItem = $list->firstWhere('id', (int)$value);
+                                $displayField = $field['directory_display_field'] ?? null;
+                                $displayValue = $directoryItem
+                                    ? (($displayField && !empty($directoryItem->data[$displayField])) ? $directoryItem->data[$displayField] : $directoryItem->value)
+                                    : $value;
+                            } else {
+                                $displayValue = is_array($value) ? json_encode($value, JSON_UNESCAPED_UNICODE) : $value;
+                            }
+                        }
+                    @endphp
+
+                    <td>{{ $displayValue }}</td>
+                @endforeach
+            </tr>
+        @empty
+            <tr>
+                <td colspan="{{ max(1, count($printColumns)) }}" style="text-align:center;">
+                    Записи не найдены
+                </td>
+            </tr>
+        @endforelse
+        </tbody>
+    </table>
+@endif
 
 @if($printSettings['show_signatures'] ?? true)
     <div class="signatures">

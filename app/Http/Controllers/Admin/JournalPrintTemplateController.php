@@ -188,6 +188,7 @@ class JournalPrintTemplateController extends Controller
             'settings' => ['nullable', 'array'],
             'settings.orientation' => ['nullable', Rule::in(['portrait', 'landscape'])],
             'settings.show_signatures' => ['nullable', 'boolean'],
+            'settings.body_html' => ['nullable', 'string', 'max:50000'],
             'settings.columns' => ['nullable', 'array'],
             'settings.columns.*.type' => ['required', Rule::in(['system', 'field'])],
             'settings.columns.*.key' => ['required', 'string', 'max:100'],
@@ -198,11 +199,12 @@ class JournalPrintTemplateController extends Controller
         $journal = JournalTemplate::findOrFail($validated['journal_template_id']);
         $allowedColumns = $this->allowedColumnKeys($journal);
         $columns = $validated['settings']['columns'] ?? [];
+        $bodyHtml = trim($validated['settings']['body_html'] ?? '');
 
-        if (count($columns) === 0) {
+        if (count($columns) === 0 && $bodyHtml === '') {
             abort(response()->json([
                 'success' => false,
-                'message' => 'Выберите хотя бы одну колонку для печати',
+                'message' => 'Выберите хотя бы одну колонку или заполните HTML-шаблон',
             ], 422));
         }
 
@@ -220,6 +222,7 @@ class JournalPrintTemplateController extends Controller
         $validated['settings'] = [
             'orientation' => $validated['settings']['orientation'] ?? 'landscape',
             'show_signatures' => !empty($validated['settings']['show_signatures']),
+            'body_html' => $bodyHtml,
             'columns' => array_values($columns),
         ];
         $validated['is_active'] = $request->boolean('is_active');

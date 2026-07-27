@@ -365,6 +365,13 @@ class JournalController extends Controller
             'orientation' => 'landscape',
             'show_signatures' => true,
         ];
+        $printHtmlEntries = $this->renderPrintHtmlEntries(
+            $journal,
+            $schema,
+            $entries,
+            $directoryValues,
+            $printTemplate
+        );
 
         return view('user.journals.print', compact(
             'journal',
@@ -373,7 +380,8 @@ class JournalController extends Controller
             'directoryValues',
             'printTemplate',
             'printColumns',
-            'printSettings'
+            'printSettings',
+            'printHtmlEntries'
         ));
     }
 
@@ -420,6 +428,108 @@ class JournalController extends Controller
             ['type' => 'system', 'key' => 'checked_by', 'label' => 'Проверил'],
             ['type' => 'system', 'key' => 'last_comment', 'label' => 'Комментарий'],
         ]);
+    }
+
+    private function renderPrintHtmlEntries(
+        JournalTemplate $journal,
+        array $schema,
+        $entries,
+        $directoryValues,
+        ?JournalPrintTemplate $printTemplate
+    ): array {
+        $template = trim($printTemplate->settings['body_html'] ?? '');
+
+        if ($template === '') {
+            return [];
+        }
+
+        $template = $this->sanitizePrintTemplateHtml($template);
+        $rendered = [];
+
+        foreach ($entries as $index => $entry) {
+            $values = $this->printTemplateValues($journal, $schema, $entry, $directoryValues, $index + 1);
+
+            $rendered[] = preg_replace_callback('/\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}/', function ($matches) use ($values) {
+                $key = $matches[1] ?? '';
+
+                return e($values[$key] ?? '');
+            }, $template);
+        }
+
+        return $rendered;
+    }
+
+    private function printTemplateValues(JournalTemplate $journal, array $schema, JournalEntry $entry, $directoryValues, int $number): array
+    {
+        $values = [
+            'entry.number' => $number,
+            'entry.date' => $entry->entry_date ? $entry->entry_date->format('d.m.Y') : '',
+            'entry.created_by' => $entry->user->name ?? '',
+            'entry.division' => $entry->division->name ?? '',
+            'entry.status' => $entry->status === 'approved'
+                ? 'Подтверждено'
+                : ($entry->status === 'rejected' ? 'Отклонено' : 'На проверке'),
+            'entry.checked_by' => $entry->checker->name ?? '',
+            'entry.comment' => $entry->lastComment ? $entry->lastComment->comment : '',
+            'journal.name' => $journal->name,
+            'journal.description' => $journal->description ?? '',
+            'print.date' => now()->format('d.m.Y H:i'),
+        ];
+
+        foreach ($schema as $field) {
+            $key = $field['key'] ?? null;
+
+            if (!$key) {
+                continue;
+            }
+
+            $values[$key] = $this->formatPrintFieldValue($field, $entry, $directoryValues);
+            $values['fields.' . $key] = $values[$key];
+        }
+
+        return $values;
+    }
+
+    private function formatPrintFieldValue(array $field, JournalEntry $entry, $directoryValues): string
+    {
+        $key = $field['key'] ?? null;
+        $type = $field['type'] ?? 'string';
+        $value = $key && is_array($entry->data) ? ($entry->data[$key] ?? null) : null;
+
+        if ($value === null || $value === '') {
+            return '';
+        }
+
+        if ($type === 'directory') {
+            $list = $directoryValues[$field['directory_id'] ?? 0] ?? collect();
+            $directoryItem = $list->firstWhere('id', (int) $value);
+            $displayField = $field['directory_display_field'] ?? null;
+
+            if ($directoryItem) {
+                return ($displayField && !empty($directoryItem->data[$displayField]))
+                    ? (string) $directoryItem->data[$displayField]
+                    : (string) $directoryItem->value;
+            }
+
+            return (string) $value;
+        }
+
+        if (is_array($value) || is_object($value)) {
+            return json_encode($value, JSON_UNESCAPED_UNICODE);
+        }
+
+        return (string) $value;
+    }
+
+    private function sanitizePrintTemplateHtml(string $html): string
+    {
+        $allowedTags = '<div><section><article><header><footer><main><p><br><span><strong><b><em><i><u><small><h1><h2><h3><h4><h5><h6><table><thead><tbody><tfoot><tr><th><td><ul><ol><li><hr>';
+        $html = strip_tags($html, $allowedTags);
+        $html = preg_replace('/\son[a-z]+\s*=\s*("[^"]*"|\'[^\']*\'|[^\s>]+)/i', '', $html);
+        $html = preg_replace('/\s(?:href|src)\s*=\s*("[^"]*"|\'[^\']*\'|[^\s>]+)/i', '', $html);
+        $html = preg_replace('/javascript\s*:/i', '', $html);
+
+        return $html;
     }
     private function getDirectoryValuesForSchema(array $schema)
     {
