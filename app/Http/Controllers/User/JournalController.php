@@ -444,6 +444,38 @@ class JournalController extends Controller
         }
 
         $template = $this->sanitizePrintTemplateHtml($template);
+        $tableHtml = null;
+
+        if (preg_match('/\{\{#entries\}\}(.*?)\{\{\/entries\}\}/s', $template)) {
+            $html = preg_replace_callback('/\{\{#entries\}\}(.*?)\{\{\/entries\}\}/s', function ($matches) use ($journal, $schema, $entries, $directoryValues) {
+                $entryTemplate = $matches[1] ?? '';
+                $rowsHtml = '';
+
+                foreach ($entries as $index => $entry) {
+                    $values = $this->printTemplateValues($journal, $schema, $entry, $directoryValues, $index + 1);
+                    $rowsHtml .= $this->replacePrintTemplateTokens($entryTemplate, $values);
+                }
+
+                return $rowsHtml;
+            }, $template);
+
+            return [
+                $this->replacePrintTemplateTokens(
+                    $html,
+                    $this->globalPrintTemplateValues($journal),
+                    $this->buildPrintEntriesTableHtml($journal, $schema, $entries, $directoryValues, $printTemplate)
+                ),
+            ];
+        }
+
+        if (preg_match('/\{\{\s*table\s*\}\}/', $template)) {
+            $tableHtml = $this->buildPrintEntriesTableHtml($journal, $schema, $entries, $directoryValues, $printTemplate);
+
+            return [
+                $this->replacePrintTemplateTokens($template, $this->globalPrintTemplateValues($journal), $tableHtml),
+            ];
+        }
+
         $rendered = [];
 
         foreach ($entries as $index => $entry) {
@@ -457,6 +489,107 @@ class JournalController extends Controller
         }
 
         return $rendered;
+    }
+
+    private function replacePrintTemplateTokens(string $template, array $values, ?string $tableHtml = null): string
+    {
+        return preg_replace_callback('/\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}/', function ($matches) use ($values, $tableHtml) {
+            $key = $matches[1] ?? '';
+
+            if ($key === 'table') {
+                return $tableHtml ?? '';
+            }
+
+            return e($values[$key] ?? '');
+        }, $template);
+    }
+
+    private function globalPrintTemplateValues(JournalTemplate $journal): array
+    {
+        return [
+            'journal.name' => $journal->name,
+            'journal.description' => $journal->description ?? '',
+            'print.date' => now()->format('d.m.Y H:i'),
+        ];
+    }
+
+    private function buildPrintEntriesTableHtml(
+        JournalTemplate $journal,
+        array $schema,
+        $entries,
+        $directoryValues,
+        ?JournalPrintTemplate $printTemplate
+    ): string {
+        $columns = $this->resolvePrintColumns($journal, $printTemplate);
+        $html = '<table><thead><tr>';
+
+        foreach ($columns as $column) {
+            $html .= '<th>' . e($column['label'] ?? $column['key'] ?? 'Поле') . '</th>';
+        }
+
+        $html .= '</tr></thead><tbody>';
+
+        if ($entries->count() === 0) {
+            $html .= '<tr><td colspan="' . max(1, count($columns)) . '" style="text-align:center;">Записи не найдены</td></tr>';
+        }
+
+        foreach ($entries as $index => $entry) {
+            $html .= '<tr>';
+
+            foreach ($columns as $column) {
+                $html .= '<td>' . e($this->printColumnValue($column, $schema, $entry, $directoryValues, $index + 1)) . '</td>';
+            }
+
+            $html .= '</tr>';
+        }
+
+        $html .= '</tbody></table>';
+
+        return $html;
+    }
+
+    private function printColumnValue(array $column, array $schema, JournalEntry $entry, $directoryValues, int $number): string
+    {
+        $columnType = $column['type'] ?? 'field';
+        $columnKey = $column['key'] ?? null;
+
+        if ($columnType === 'system') {
+            if ($columnKey === 'number') {
+                return (string) $number;
+            }
+
+            if ($columnKey === 'entry_date') {
+                return $entry->entry_date ? $entry->entry_date->format('d.m.Y') : '';
+            }
+
+            if ($columnKey === 'created_by') {
+                return $entry->user->name ?? '';
+            }
+
+            if ($columnKey === 'division') {
+                return $entry->division->name ?? '';
+            }
+
+            if ($columnKey === 'status') {
+                return $entry->status === 'approved'
+                    ? 'Подтверждено'
+                    : ($entry->status === 'rejected' ? 'Отклонено' : 'На проверке');
+            }
+
+            if ($columnKey === 'checked_by') {
+                return $entry->checker->name ?? '';
+            }
+
+            if ($columnKey === 'last_comment') {
+                return $entry->lastComment ? $entry->lastComment->comment : '';
+            }
+
+            return '';
+        }
+
+        $field = collect($schema)->firstWhere('key', $columnKey) ?? [];
+
+        return $this->formatPrintFieldValue($field, $entry, $directoryValues);
     }
 
     private function printTemplateValues(JournalTemplate $journal, array $schema, JournalEntry $entry, $directoryValues, int $number): array

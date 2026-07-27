@@ -120,48 +120,117 @@
                     <div class="alert alert-info mt-4">
                         <div class="fw-bold mb-1">Подсказка по шаблону печати</div>
                         <div class="small">
-                            Можно использовать обычную таблицу с колонками или написать HTML-шаблон ниже. В HTML можно
-                            вставлять поля журнала через двойные фигурные скобки: <code>@{{ part }}</code>,
-                            <code>@{{ quantity }}</code>, <code>@{{ entry.date }}</code>.
+                            Напишите HTML-шаблон ниже. Можно вставлять поля журнала через двойные фигурные скобки:
+                            <code>@{{ part }}</code>, <code>@{{ quantity }}</code>, <code>@{{ entry.date }}</code>.
+                            Для печати всей таблицы журнала используйте <code>@{{ table }}</code>.
+                            Для ручной разметки списка записей используйте цикл
+                            <code>@{{#entries}} ... @{{/entries}}</code>.
                         </div>
                     </div>
 
                     <div class="mt-4">
-                        <label class="form-label">HTML-шаблон печати</label>
-                        <textarea class="form-control font-monospace"
-                                  id="templateBodyHtml"
-                                  rows="9"
-                                  placeholder="<h2>Акт списания</h2>&#10;<p>Дата: @{{ entry.date }}</p>&#10;<p>Деталь: @{{ part }}</p>"></textarea>
-                        <div class="text-secondary small mt-2">
-                            Если HTML заполнен, при печати каждая запись будет выведена по этому шаблону. Значения полей
-                            подставляются безопасно, HTML из самих значений не выполняется.
-                        </div>
-                        <div class="mt-2">
-                            <div class="fw-bold small mb-1">Доступные переменные</div>
-                            <div class="d-flex flex-wrap gap-2 small" id="templateVariablesBox"></div>
-                        </div>
-                        <div class="mt-3">
-                            <div class="fw-bold small mb-1">Готовые таблицы для вставки</div>
-                            <div class="d-flex flex-wrap gap-2 small" id="templateTablesBox"></div>
-                            <div class="text-secondary small mt-1">
-                                Кнопки вставляют HTML-каркас в поле выше. Потом можно удалить лишние колонки или поменять подписи.
+                        <ul class="nav nav-tabs" role="tablist">
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link active"
+                                        type="button"
+                                        data-bs-toggle="tab"
+                                        data-bs-target="#templateEditorTab"
+                                        role="tab">
+                                    Редактор
+                                </button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link"
+                                        type="button"
+                                        data-bs-toggle="tab"
+                                        data-bs-target="#templateExamplesTab"
+                                        role="tab">
+                                    Примеры
+                                </button>
+                            </li>
+                        </ul>
+
+                        <div class="tab-content border border-top-0 rounded-bottom p-3">
+                            <div class="tab-pane fade show active" id="templateEditorTab" role="tabpanel">
+                                <label class="form-label">HTML-шаблон печати</label>
+                                <textarea class="form-control font-monospace"
+                                          id="templateBodyHtml"
+                                          rows="11"
+                                          placeholder="<h2>Акт списания</h2>&#10;<p>Дата: @{{ entry.date }}</p>&#10;<p>Деталь: @{{ part }}</p>&#10;@{{ table }}"></textarea>
+                                <div class="text-secondary small mt-2">
+                                    Если вставить <code>@{{ table }}</code>, система напечатает всю таблицу записей по текущим фильтрам.
+                                    Если таблицы нет, шаблон будет выведен отдельно для каждой записи.
+                                </div>
+                                <div class="mt-2">
+                                    <div class="fw-bold small mb-1">Доступные переменные</div>
+                                    <div class="d-flex flex-wrap gap-2 small" id="templateVariablesBox"></div>
+                                </div>
+                                <div class="mt-3">
+                                    <div class="fw-bold small mb-1">Готовые вставки</div>
+                                    <div class="d-flex flex-wrap gap-2 small" id="templateTablesBox"></div>
+                                    <div class="text-secondary small mt-1">
+                                        Кнопки вставляют готовый HTML или переменную таблицы в поле выше.
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="tab-pane fade" id="templateExamplesTab" role="tabpanel">
+                                <div class="row g-3">
+                                    <div class="col-md-4">
+                                        <div class="border rounded p-3 h-100">
+                                            <div class="fw-bold mb-1">Заголовок + вся таблица</div>
+                                            <div class="text-secondary small mb-2">Самый частый вариант отчёта по журналу.</div>
+                                            <button type="button"
+                                                    class="btn btn-sm btn-outline-info insert-example-template"
+                                                    data-example-template="full-table">
+                                                Вставить пример
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="border rounded p-3 h-100">
+                                            <div class="fw-bold mb-1">Карточка записи</div>
+                                            <div class="text-secondary small mb-2">Каждая запись печатается отдельным блоком.</div>
+                                            <button type="button"
+                                                    class="btn btn-sm btn-outline-info insert-example-template"
+                                                    data-example-template="entry-card">
+                                                Вставить пример
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="border rounded p-3 h-100">
+                                            <div class="fw-bold mb-1">Таблица через цикл</div>
+                                            <div class="text-secondary small mb-2">Ручная таблица, где строки создаются циклом.</div>
+                                            <button type="button"
+                                                    class="btn btn-sm btn-outline-info insert-example-template"
+                                                    data-example-template="loop-table">
+                                                Вставить пример
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="border rounded p-3 h-100">
+                                            <div class="fw-bold mb-1">Акт с подписью</div>
+                                            <div class="text-secondary small mb-2">Заготовка с датой, журналом и строкой подписи.</div>
+                                            <button type="button"
+                                                    class="btn btn-sm btn-outline-info insert-example-template"
+                                                    data-example-template="act">
+                                                Вставить пример
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
 
-                    <div class="d-flex justify-content-between align-items-center mt-4 mb-2">
-                        <div>
-                            <div class="fw-bold">Колонки печати</div>
-                            <div class="text-secondary small">Используются для обычной табличной печати, если HTML-шаблон пустой.</div>
-                        </div>
-
+                    <div class="mt-4">
                         <div class="form-check form-switch">
                             <input class="form-check-input" type="checkbox" id="showSignatures" checked>
                             <label class="form-check-label" for="showSignatures">Показывать подписи</label>
                         </div>
                     </div>
-
-                    <div id="columnsBox" class="row g-2"></div>
                 </div>
 
                 <div class="modal-footer">
@@ -248,6 +317,14 @@
             return '{' + '{ ' + key + ' }' + '}';
         }
 
+        function entriesLoopStartToken() {
+            return '{' + '{#entries}' + '}';
+        }
+
+        function entriesLoopEndToken() {
+            return '{' + '{/entries}' + '}';
+        }
+
         function insertIntoTemplateTextarea(text) {
             let textarea = document.getElementById('templateBodyHtml');
             let start = textarea.selectionStart || 0;
@@ -261,54 +338,6 @@
 
         function renderColumns(selectedColumns = null) {
             let journal = getJournal($('#journalTemplateId').val());
-            let allColumns = allColumnsForJournal(journal);
-            let selectedMap = {};
-            let selectedOrder = selectedColumns && selectedColumns.length ? selectedColumns : defaultColumnsForJournal(journal);
-
-            selectedOrder.forEach(function (column, index) {
-                selectedMap[columnId(column)] = {
-                    label: column.label,
-                    order: index + 1,
-                };
-            });
-
-            let html = '';
-
-            allColumns.forEach(function (column, index) {
-                let id = columnId(column);
-                let selected = selectedMap[id] || null;
-
-                html += `
-                    <div class="col-md-6 column-card" data-column-id="${escapeHtml(id)}">
-                        <div class="border rounded p-3 h-100">
-                            <div class="d-flex gap-2 align-items-start">
-                                <input class="form-check-input column-enabled mt-2" type="checkbox"
-                                       data-type="${escapeHtml(column.type)}"
-                                       data-key="${escapeHtml(column.key)}"
-                                       ${selected ? 'checked' : ''}>
-                                <div class="flex-grow-1">
-                                    <div class="fw-bold">${escapeHtml(column.label)}</div>
-                                    <div class="text-secondary small">${column.type === 'system' ? 'Служебная колонка' : 'Поле журнала'}: <code>${escapeHtml(column.key)}</code></div>
-                                    <div class="row g-2 mt-1">
-                                        <div class="col-8">
-                                            <input type="text" class="form-control form-control-sm column-label"
-                                                   value="${escapeHtml(selected?.label || column.label)}"
-                                                   placeholder="Название колонки">
-                                        </div>
-                                        <div class="col-4">
-                                            <input type="number" class="form-control form-control-sm column-order"
-                                                   value="${escapeHtml(selected?.order || index + 1)}"
-                                                   min="1" title="Порядок">
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                `;
-            });
-
-            $('#columnsBox').html(html || '<div class="text-secondary">Сначала выберите журнал</div>');
             renderTemplateVariables(journal);
             renderTemplateTableButtons(journal);
         }
@@ -342,6 +371,7 @@
                 {key: 'entry.comment', label: 'Комментарий'},
                 {key: 'journal.name', label: 'Название журнала'},
                 {key: 'print.date', label: 'Дата печати'},
+                {key: 'table', label: 'Вся таблица журнала'},
             ];
 
             (journal?.schema || []).forEach(function (field) {
@@ -371,16 +401,16 @@
             let disabled = journal ? '' : 'disabled';
             let html = `
                 <button type="button" class="btn btn-sm btn-outline-info insert-table-template"
-                        data-table-template="selected" ${disabled}>
-                    Таблица выбранных колонок
-                </button>
-                <button type="button" class="btn btn-sm btn-outline-info insert-table-template"
-                        data-table-template="fields" ${disabled}>
-                    Таблица полей журнала
+                        data-table-template="whole" ${disabled}>
+                    Вся таблица журнала
                 </button>
                 <button type="button" class="btn btn-sm btn-outline-info insert-table-template"
                         data-table-template="vertical" ${disabled}>
-                    Поле - значение
+                    Таблица записи: поле - значение
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-info insert-table-template"
+                        data-table-template="loop" ${disabled}>
+                    Цикл по записям
                 </button>
             `;
 
@@ -396,21 +426,12 @@
 
             let columns = [];
 
-            if (type === 'selected') {
-                columns = readColumns();
+            if (type === 'whole') {
+                return templateToken('table');
+            }
 
-                if (!columns.length) {
-                    columns = defaultColumnsForJournal(journal);
-                }
-
-                let header = columns
-                    .map(column => `        <th>${escapeHtml(column.label || column.key)}</th>`)
-                    .join('\n');
-                let cells = columns
-                    .map(column => `        <td>${templateToken(variableKeyForColumn(column))}</td>`)
-                    .join('\n');
-
-                return `<table>\n    <thead>\n    <tr>\n${header}\n    </tr>\n    </thead>\n    <tbody>\n    <tr>\n${cells}\n    </tr>\n    </tbody>\n</table>\n`;
+            if (type === 'loop') {
+                return `${entriesLoopStartToken()}\n<section>\n    <h3>Запись №${templateToken('entry.number')}</h3>\n    <p>Дата: ${templateToken('entry.date')}</p>\n</section>\n${entriesLoopEndToken()}\n`;
             }
 
             columns = (journal.schema || [])
@@ -421,22 +442,27 @@
                     label: field.label || field.key,
                 }));
 
-            if (type === 'fields') {
-                let header = columns
-                    .map(column => `        <th>${escapeHtml(column.label)}</th>`)
-                    .join('\n');
-                let cells = columns
-                    .map(column => `        <td>${templateToken(column.key)}</td>`)
-                    .join('\n');
-
-                return `<table>\n    <thead>\n    <tr>\n${header}\n    </tr>\n    </thead>\n    <tbody>\n    <tr>\n${cells}\n    </tr>\n    </tbody>\n</table>\n`;
-            }
-
             let rows = columns
                 .map(column => `    <tr>\n        <th>${escapeHtml(column.label)}</th>\n        <td>${templateToken(column.key)}</td>\n    </tr>`)
                 .join('\n');
 
             return `<table>\n    <tbody>\n${rows}\n    </tbody>\n</table>\n`;
+        }
+
+        function exampleSnippet(type) {
+            if (type === 'entry-card') {
+                return `<section>\n    <h2>${templateToken('journal.name')}</h2>\n    <p><strong>Дата:</strong> ${templateToken('entry.date')}</p>\n    <table>\n        <tbody>\n            <tr>\n                <th>Подразделение</th>\n                <td>${templateToken('entry.division')}</td>\n            </tr>\n            <tr>\n                <th>Статус</th>\n                <td>${templateToken('entry.status')}</td>\n            </tr>\n        </tbody>\n    </table>\n</section>\n`;
+            }
+
+            if (type === 'act') {
+                return `<h2 style="text-align:center;">Акт по журналу ${templateToken('journal.name')}</h2>\n<p><strong>Дата формирования:</strong> ${templateToken('print.date')}</p>\n<p><strong>Журнал:</strong> ${templateToken('journal.name')}</p>\n${templateToken('table')}\n<br>\n<table>\n    <tbody>\n    <tr>\n        <td style="border:0; width:50%;">Ответственный: ____________________</td>\n        <td style="border:0; width:50%;">Проверил: ____________________</td>\n    </tr>\n    </tbody>\n</table>\n`;
+            }
+
+            if (type === 'loop-table') {
+                return `<h2>${templateToken('journal.name')}</h2>\n<p>Дата печати: ${templateToken('print.date')}</p>\n<table>\n    <thead>\n    <tr>\n        <th>№</th>\n        <th>Дата</th>\n        <th>Статус</th>\n    </tr>\n    </thead>\n    <tbody>\n    ${entriesLoopStartToken()}\n    <tr>\n        <td>${templateToken('entry.number')}</td>\n        <td>${templateToken('entry.date')}</td>\n        <td>${templateToken('entry.status')}</td>\n    </tr>\n    ${entriesLoopEndToken()}\n    </tbody>\n</table>\n`;
+            }
+
+            return `<h2>${templateToken('journal.name')}</h2>\n<p>Дата печати: ${templateToken('print.date')}</p>\n${templateToken('table')}\n`;
         }
 
         function readColumns() {
@@ -482,6 +508,7 @@
                 response.items.forEach(function (item) {
                     let columnsCount = item.settings?.columns?.length || 0;
                     let hasHtml = !!(item.settings?.body_html || '').trim();
+                    let hasTable = !!(item.settings?.body_html || '').match(/\{\{\s*table\s*\}\}/);
 
                     html += `
                         <tr>
@@ -492,7 +519,8 @@
                             <td>${escapeHtml(item.journal_template?.name || '—')}</td>
                             <td>
                                 ${hasHtml ? '<span class="badge bg-info me-1">HTML</span>' : ''}
-                                ${columnsCount} кол.
+                                ${hasTable ? '<span class="badge bg-success me-1">Таблица</span>' : ''}
+                                ${columnsCount ? `${columnsCount} кол.` : 'textarea'}
                             </td>
                             <td>${escapeHtml(item.creator?.name || 'Суперадмин')}</td>
                             <td>
@@ -605,6 +633,11 @@
             }
 
             insertIntoTemplateTextarea(snippet);
+        });
+
+        $(document).on('click', '.insert-example-template', function () {
+            insertIntoTemplateTextarea(exampleSnippet($(this).data('example-template')));
+            bootstrap.Tab.getOrCreateInstance(document.querySelector('[data-bs-target="#templateEditorTab"]')).show();
         });
 
         $(document).on('click', '.delete-template', function () {
