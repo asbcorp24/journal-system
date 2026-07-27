@@ -131,7 +131,7 @@
                         <textarea class="form-control font-monospace"
                                   id="templateBodyHtml"
                                   rows="9"
-                                  placeholder="<h2>Акт списания</h2>&#10;<p>Дата: {{ entry.date }}</p>&#10;<p>Деталь: {{ part }}</p>"></textarea>
+                                  placeholder="<h2>Акт списания</h2>&#10;<p>Дата: @{{ entry.date }}</p>&#10;<p>Деталь: @{{ part }}</p>"></textarea>
                         <div class="text-secondary small mt-2">
                             Если HTML заполнен, при печати каждая запись будет выведена по этому шаблону. Значения полей
                             подставляются безопасно, HTML из самих значений не выполняется.
