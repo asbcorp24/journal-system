@@ -140,6 +140,13 @@
                             <div class="fw-bold small mb-1">Доступные переменные</div>
                             <div class="d-flex flex-wrap gap-2 small" id="templateVariablesBox"></div>
                         </div>
+                        <div class="mt-3">
+                            <div class="fw-bold small mb-1">Готовые таблицы для вставки</div>
+                            <div class="d-flex flex-wrap gap-2 small" id="templateTablesBox"></div>
+                            <div class="text-secondary small mt-1">
+                                Кнопки вставляют HTML-каркас в поле выше. Потом можно удалить лишние колонки или поменять подписи.
+                            </div>
+                        </div>
                     </div>
 
                     <div class="d-flex justify-content-between align-items-center mt-4 mb-2">
@@ -237,6 +244,21 @@
             return `${column.type}:${column.key}`;
         }
 
+        function templateToken(key) {
+            return '{' + '{ ' + key + ' }' + '}';
+        }
+
+        function insertIntoTemplateTextarea(text) {
+            let textarea = document.getElementById('templateBodyHtml');
+            let start = textarea.selectionStart || 0;
+            let end = textarea.selectionEnd || 0;
+            let value = textarea.value;
+
+            textarea.value = value.substring(0, start) + text + value.substring(end);
+            textarea.focus();
+            textarea.selectionStart = textarea.selectionEnd = start + text.length;
+        }
+
         function renderColumns(selectedColumns = null) {
             let journal = getJournal($('#journalTemplateId').val());
             let allColumns = allColumnsForJournal(journal);
@@ -288,6 +310,25 @@
 
             $('#columnsBox').html(html || '<div class="text-secondary">Сначала выберите журнал</div>');
             renderTemplateVariables(journal);
+            renderTemplateTableButtons(journal);
+        }
+
+        function variableKeyForColumn(column) {
+            if (column.type === 'field') {
+                return column.key;
+            }
+
+            const map = {
+                number: 'entry.number',
+                entry_date: 'entry.date',
+                created_by: 'entry.created_by',
+                division: 'entry.division',
+                status: 'entry.status',
+                checked_by: 'entry.checked_by',
+                last_comment: 'entry.comment',
+            };
+
+            return map[column.key] || column.key;
         }
 
         function renderTemplateVariables(journal) {
@@ -324,6 +365,78 @@
             }).join('');
 
             $('#templateVariablesBox').html(html || '<span class="text-secondary">Сначала выберите журнал</span>');
+        }
+
+        function renderTemplateTableButtons(journal) {
+            let disabled = journal ? '' : 'disabled';
+            let html = `
+                <button type="button" class="btn btn-sm btn-outline-info insert-table-template"
+                        data-table-template="selected" ${disabled}>
+                    Таблица выбранных колонок
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-info insert-table-template"
+                        data-table-template="fields" ${disabled}>
+                    Таблица полей журнала
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-info insert-table-template"
+                        data-table-template="vertical" ${disabled}>
+                    Поле - значение
+                </button>
+            `;
+
+            $('#templateTablesBox').html(html);
+        }
+
+        function htmlTableSnippet(type) {
+            let journal = getJournal($('#journalTemplateId').val());
+
+            if (!journal) {
+                return '';
+            }
+
+            let columns = [];
+
+            if (type === 'selected') {
+                columns = readColumns();
+
+                if (!columns.length) {
+                    columns = defaultColumnsForJournal(journal);
+                }
+
+                let header = columns
+                    .map(column => `        <th>${escapeHtml(column.label || column.key)}</th>`)
+                    .join('\n');
+                let cells = columns
+                    .map(column => `        <td>${templateToken(variableKeyForColumn(column))}</td>`)
+                    .join('\n');
+
+                return `<table>\n    <thead>\n    <tr>\n${header}\n    </tr>\n    </thead>\n    <tbody>\n    <tr>\n${cells}\n    </tr>\n    </tbody>\n</table>\n`;
+            }
+
+            columns = (journal.schema || [])
+                .filter(field => field.key)
+                .map(field => ({
+                    type: 'field',
+                    key: field.key,
+                    label: field.label || field.key,
+                }));
+
+            if (type === 'fields') {
+                let header = columns
+                    .map(column => `        <th>${escapeHtml(column.label)}</th>`)
+                    .join('\n');
+                let cells = columns
+                    .map(column => `        <td>${templateToken(column.key)}</td>`)
+                    .join('\n');
+
+                return `<table>\n    <thead>\n    <tr>\n${header}\n    </tr>\n    </thead>\n    <tbody>\n    <tr>\n${cells}\n    </tr>\n    </tbody>\n</table>\n`;
+            }
+
+            let rows = columns
+                .map(column => `    <tr>\n        <th>${escapeHtml(column.label)}</th>\n        <td>${templateToken(column.key)}</td>\n    </tr>`)
+                .join('\n');
+
+            return `<table>\n    <tbody>\n${rows}\n    </tbody>\n</table>\n`;
         }
 
         function readColumns() {
@@ -480,15 +593,18 @@
         });
 
         $(document).on('click', '.insert-variable', function () {
-            let textarea = document.getElementById('templateBodyHtml');
-            let token = `{{ ${$(this).data('variable')} }}`;
-            let start = textarea.selectionStart || 0;
-            let end = textarea.selectionEnd || 0;
-            let value = textarea.value;
+            insertIntoTemplateTextarea(templateToken($(this).data('variable')));
+        });
 
-            textarea.value = value.substring(0, start) + token + value.substring(end);
-            textarea.focus();
-            textarea.selectionStart = textarea.selectionEnd = start + token.length;
+        $(document).on('click', '.insert-table-template', function () {
+            let snippet = htmlTableSnippet($(this).data('table-template'));
+
+            if (!snippet) {
+                showToast('Сначала выберите журнал', 'warning');
+                return;
+            }
+
+            insertIntoTemplateTextarea(snippet);
         });
 
         $(document).on('click', '.delete-template', function () {
