@@ -1134,6 +1134,25 @@
                         Формула: ${escapeHtml(field.formula || '')}
                     </div>
                 `;
+            } else if (field.type === 'sql') {
+                html += `
+                    <div class="input-group">
+                        <input type="text"
+                               class="form-control journal-field sql-field"
+                               data-key="${field.key}"
+                               value="${escapeHtml(value)}"
+                               readonly>
+                        <button type="button"
+                                class="btn btn-outline-info recalculate-sql-field"
+                                data-key="${field.key}"
+                                title="Выполнить SQL-запрос заново и сохранить значение">
+                            Пересчитать
+                        </button>
+                    </div>
+                    <div class="text-secondary small mt-1">
+                        Значение сохраняется в записи. Автоматически повторно не пересчитывается.
+                    </div>
+                `;
             } else {
                 html += `
                     <input type="text"
@@ -2157,6 +2176,35 @@
         }
         $(document).on('input change', '.journal-field', function () {
             recalculateCalcFields();
+        });
+
+        $(document).on('click', '.recalculate-sql-field', function () {
+            let entryId = $('#entryId').val();
+            let fieldKey = $(this).data('key');
+            let button = $(this);
+
+            if (!entryId) {
+                showToast('Сначала сохраните запись, потом можно пересчитать SQL-поле', 'warning');
+                return;
+            }
+
+            button.prop('disabled', true).text('Считаем...');
+
+            $.ajax({
+                url: `/journals/${journalId}/entries/${entryId}/sql-fields/${encodeURIComponent(fieldKey)}/recalculate`,
+                method: 'POST',
+                success: function (response) {
+                    $(`.journal-field[data-key="${fieldKey}"]`).val(response.value ?? '');
+                    showToast(response.message || 'Поле пересчитано', 'success');
+                    loadEntries(currentPage);
+                },
+                error: function (xhr) {
+                    showAjaxErrors(xhr);
+                },
+                complete: function () {
+                    button.prop('disabled', false).text('Пересчитать');
+                }
+            });
         });
     </script>
 @endpush

@@ -55,6 +55,8 @@ Route::middleware('user.auth')->group(function () {
         ->withTrashed()
         ->name('user.journals.entries.restore');
 
+    Route::post('/journals/{journal}/entries/{entry}/sql-fields/{fieldKey}/recalculate', [JournalController::class, 'recalculateSqlField'])
+        ->name('user.journals.entries.sql-fields.recalculate');
 
     Route::post('/journals/{journal}/entries/{entry}/approve', [JournalController::class, 'approve'])
         ->name('user.journals.entries.approve');

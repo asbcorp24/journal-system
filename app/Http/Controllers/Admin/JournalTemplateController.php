@@ -262,6 +262,7 @@ class JournalTemplateController extends Controller
                     'directory',
                     'directory_text',
                     'calc',
+                    'sql',
                 ]),
             ],
             'schema.*.tab' => [
@@ -300,6 +301,11 @@ class JournalTemplateController extends Controller
                 'nullable',
                 'string',
                 'max:1000',
+            ],
+            'schema.*.sql_query' => [
+                'nullable',
+                'string',
+                'max:5000',
             ],
             'schema.*.validation' => [
                 'nullable',
@@ -460,6 +466,19 @@ class JournalTemplateController extends Controller
 
             if ($field['type'] === 'calc') {
                 $item['formula'] = $field['formula'] ?? '';
+            }
+
+            if ($field['type'] === 'sql') {
+                $sqlQuery = trim((string)($field['sql_query'] ?? ''));
+
+                if ($sqlQuery === '') {
+                    abort(response()->json([
+                        'success' => false,
+                        'message' => "Для поля «{$field['label']}» нужно указать SQL-запрос",
+                    ], 422));
+                }
+
+                $item['sql_query'] = $sqlQuery;
             }
 
             $schema[] = $item;

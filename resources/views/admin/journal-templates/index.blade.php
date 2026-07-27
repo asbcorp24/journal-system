@@ -409,6 +409,7 @@
                 directory_display_field: data?.directory_display_field || '',
                 options: data?.options || [],
                 formula: data?.formula || '',
+                sql_query: data?.sql_query || '',
                 validation: data?.validation || {
                     min: '',
                     max: '',
@@ -461,6 +462,7 @@
                 field.directory_id = $(`${prefix} .field-directory`).val();
                 field.directory_display_field = $(`${prefix} .field-directory-display`).val();
                 field.formula = $(`${prefix} .field-formula`).val();
+                field.sql_query = $(`${prefix} .field-sql-query`).val();
                 field.validation = {
                     min: $(`${prefix} .field-validation-min`).val(),
                     max: $(`${prefix} .field-validation-max`).val(),
@@ -590,6 +592,7 @@
                                     <option value="directory" ${field.type === 'directory' ? 'selected' : ''}>Справочник ID</option>
                                     <option value="directory_text" ${field.type === 'directory_text' ? 'selected' : ''}>Справочник текстом</option>
                                     <option value="calc" ${field.type === 'calc' ? 'selected' : ''}>Вычисляемое</option>
+                                    <option value="sql" ${field.type === 'sql' ? 'selected' : ''}>SQL-запрос</option>
                                 </select>
                             </div>
 
@@ -676,6 +679,16 @@
     <div class="text-warning small mt-2">
         Важно: в формуле нужно использовать именно <b>ключи полей</b>, например
         <code>count</code>, <code>price</code>, <code>hours</code>, а не русские названия.
+    </div>
+</div>
+<div class="col-md-12 field-sql-block ${field.type === 'sql' ? '' : 'd-none'}">
+    <label class="form-label">SQL-запрос</label>
+    <textarea class="form-control field-sql-query"
+              rows="4"
+              placeholder="SELECT value FROM table_name WHERE id = :field_key">${escapeHtml(field.sql_query || '')}</textarea>
+    <div class="text-secondary small mt-1">
+        Запрос должен быть одним <code>SELECT</code> и вернуть одну колонку. Можно использовать параметры из полей записи:
+        <code>:field_key</code>, например <code>:part</code> или <code>:quantity</code>.
     </div>
 </div>
 <div class="col-md-12 field-validation-block ${['number', 'calc'].includes(field.type) ? '' : 'd-none'}">
@@ -778,6 +791,10 @@
                     item.formula = card.find('.field-formula').val() || '';
                 }
 
+                if (type === 'sql') {
+                    item.sql_query = card.find('.field-sql-query').val() || '';
+                }
+
                 if (type === 'number' || type === 'calc') {
                     let validation = {};
 
@@ -856,7 +873,7 @@
             renderFields();
         });
 
-        $(document).on('input change', '.field-label, .field-tab, .field-required, .field-filterable, .field-directory, .field-directory-display, .field-options, .field-formula, .field-validation-min, .field-validation-max, .field-validation-greater, .field-validation-less', function () {
+        $(document).on('input change', '.field-label, .field-tab, .field-required, .field-filterable, .field-directory, .field-directory-display, .field-options, .field-formula, .field-sql-query, .field-validation-min, .field-validation-max, .field-validation-greater, .field-validation-less', function () {
             updateSchemaPreview();
         });
 

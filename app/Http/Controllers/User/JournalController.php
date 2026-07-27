@@ -563,8 +563,6 @@ class JournalController extends Controller
             abort(403, 'Нет прав на заполнение этого журнала');
         }
 
-        $validatedData = $this->validateEntryData($request, $journal);
-
         $divisionId = $this->defaultWritableDivisionId($access);
 
         if ($request->filled('division_id') && $this->canManageJournalDivision($journal, (int) $request->division_id)) {
@@ -574,6 +572,8 @@ class JournalController extends Controller
         if ($divisionId === null) {
             abort(403, 'Не удалось определить подразделение для записи');
         }
+
+        $validatedData = $this->validateEntryData($request, $journal, [], $divisionId, (int) session('user_id'));
 
         $entryDate = $this->detectEntryDate($validatedData, $request);
 
@@ -620,8 +620,6 @@ class JournalController extends Controller
         $this->checkEntryBelongsToJournal($journal, $entry);
         $this->checkCanUpdateEntry($entry);
 
-        $validatedData = $this->validateEntryData($request, $journal);
-
         $role = session('user_role');
 
         $divisionId = $entry->division_id;
@@ -629,6 +627,8 @@ class JournalController extends Controller
         if ($role === 'admin' && $request->filled('division_id') && $this->canAccessDivision((int) $request->division_id)) {
             $divisionId = $request->division_id;
         }
+
+        $validatedData = $this->validateEntryData($request, $journal, $entry->data ?? [], (int) $divisionId, (int) $entry->user_id);
 
         $entryDate = $this->detectEntryDate($validatedData, $request);
         $newStatus = $entry->status;
@@ -858,6 +858,50 @@ class JournalController extends Controller
         ]);
     }
 
+    public function recalculateSqlField(Request $request, JournalTemplate $journal, JournalEntry $entry, string $fieldKey)
+    {
+        $this->checkJournalAccess($journal);
+        $this->checkEntryBelongsToJournal($journal, $entry);
+        $this->checkCanUpdateEntry($entry);
+
+        $schema = $journal->schema ?? [];
+        $field = collect($schema)->first(function ($schemaField) use ($fieldKey) {
+            return ($schemaField['key'] ?? null) === $fieldKey
+                && ($schemaField['type'] ?? null) === 'sql';
+        });
+
+        if (!$field) {
+            abort(404, 'SQL-поле не найдено');
+        }
+
+        $data = is_array($entry->data) ? $entry->data : [];
+        $oldData = $data;
+        $value = $this->executeSqlFieldQuery($field, $data, $journal, $entry);
+        $data[$fieldKey] = $value;
+
+        $entry->update([
+            'data' => $data,
+        ]);
+
+        $this->writeEntryLog(
+            $entry,
+            'sql_recalculate',
+            null,
+            null,
+            $oldData,
+            $data,
+            "Пересчитано SQL-поле «" . ($field['label'] ?? $fieldKey) . "»",
+            $request
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Поле пересчитано',
+            'value' => $value,
+            'entry' => $entry->fresh(),
+        ]);
+    }
+
     public function storeDirectoryValue(Request $request, JournalTemplate $journal, Directory $directory)
     {
         $this->checkJournalAccess($journal);
@@ -1060,7 +1104,13 @@ class JournalController extends Controller
         abort(403, 'Нет доступа');
     }
 
-    private function validateEntryData(Request $request, JournalTemplate $journal): array
+    private function validateEntryData(
+        Request $request,
+        JournalTemplate $journal,
+        array $existingData = [],
+        ?int $divisionId = null,
+        ?int $userId = null
+    ): array
     {
         $schema = $journal->schema ?? [];
         $data = $request->input('data', []);
@@ -1085,6 +1135,11 @@ class JournalController extends Controller
             }
 
             $value = $data[$key] ?? null;
+
+            if ($type === 'sql') {
+                $result[$key] = $existingData[$key] ?? null;
+                continue;
+            }
 
             if ($required && ($value === null || $value === '')) {
                 abort(response()->json([
@@ -1174,10 +1229,62 @@ class JournalController extends Controller
             $result[$key] = trim((string)$value);
         }
         $result = $this->calculateCalcFields($schema, $result);
+        $result = $this->calculateMissingSqlFields($schema, $result, $journal, null, $divisionId, $userId);
+        $this->validateRequiredSqlFields($schema, $result);
         // ВОТ ЗДЕСЬ ПРОВЕРЯЕМ ОГРАНИЧЕНИЯ ИЗ ШАБЛОНА ЖУРНАЛА
         $this->validateNumericConstraints($schema, $result);
 
         return $result;
+    }
+
+    private function calculateMissingSqlFields(
+        array $schema,
+        array $data,
+        JournalTemplate $journal,
+        ?JournalEntry $entry = null,
+        ?int $divisionId = null,
+        ?int $userId = null
+    ): array
+    {
+        foreach ($schema as $field) {
+            if (($field['type'] ?? '') !== 'sql') {
+                continue;
+            }
+
+            $key = $field['key'] ?? null;
+
+            if (!$key) {
+                continue;
+            }
+
+            if (array_key_exists($key, $data) && $data[$key] !== null && $data[$key] !== '') {
+                continue;
+            }
+
+            $data[$key] = $this->executeSqlFieldQuery($field, $data, $journal, $entry, $divisionId, $userId);
+        }
+
+        return $data;
+    }
+
+    private function validateRequiredSqlFields(array $schema, array $data): void
+    {
+        foreach ($schema as $field) {
+            if (($field['type'] ?? '') !== 'sql' || empty($field['required'])) {
+                continue;
+            }
+
+            $key = $field['key'] ?? null;
+            $label = $field['label'] ?? $key;
+            $value = $key ? ($data[$key] ?? null) : null;
+
+            if ($value === null || $value === '') {
+                abort(response()->json([
+                    'success' => false,
+                    'message' => "SQL-поле «{$label}» не вернуло значение",
+                ], 422));
+            }
+        }
     }
     private function calculateCalcFields(array $schema, array $data): array
     {
@@ -1255,6 +1362,113 @@ class JournalController extends Controller
 
         return round((float)$result, 6);
     }
+
+    private function executeSqlFieldQuery(
+        array $field,
+        array $data,
+        JournalTemplate $journal,
+        ?JournalEntry $entry = null,
+        ?int $divisionId = null,
+        ?int $userId = null
+    )
+    {
+        $label = $field['label'] ?? ($field['key'] ?? 'SQL');
+        $sql = trim((string)($field['sql_query'] ?? ''));
+
+        if ($sql === '') {
+            abort(response()->json([
+                'success' => false,
+                'message' => "Для SQL-поля «{$label}» не задан запрос",
+            ], 422));
+        }
+
+        if (!$this->isSafeSqlFieldQuery($sql)) {
+            abort(response()->json([
+                'success' => false,
+                'message' => "SQL-поле «{$label}» должно содержать один SELECT-запрос без дополнительных команд",
+            ], 422));
+        }
+
+        $bindings = $this->buildSqlFieldBindings($sql, $data, $journal, $entry, $divisionId, $userId);
+
+        try {
+            $row = DB::selectOne($sql, $bindings);
+        } catch (\Throwable $e) {
+            abort(response()->json([
+                'success' => false,
+                'message' => "Ошибка выполнения SQL-поля «{$label}»: " . $e->getMessage(),
+            ], 422));
+        }
+
+        if (!$row) {
+            return null;
+        }
+
+        $values = array_values((array)$row);
+
+        if (count($values) !== 1) {
+            abort(response()->json([
+                'success' => false,
+                'message' => "SQL-поле «{$label}» должно возвращать ровно одну колонку",
+            ], 422));
+        }
+
+        $value = $values[0];
+
+        if ($value === null) {
+            return null;
+        }
+
+        return is_scalar($value) ? (string)$value : json_encode($value, JSON_UNESCAPED_UNICODE);
+    }
+
+    private function isSafeSqlFieldQuery(string $sql): bool
+    {
+        $normalized = trim($sql);
+
+        if (str_contains($normalized, ';')) {
+            return false;
+        }
+
+        return (bool)preg_match('/^select\b/i', $normalized);
+    }
+
+    private function buildSqlFieldBindings(
+        string $sql,
+        array $data,
+        JournalTemplate $journal,
+        ?JournalEntry $entry = null,
+        ?int $divisionId = null,
+        ?int $userId = null
+    ): array
+    {
+        preg_match_all('/:([a-zA-Z_][a-zA-Z0-9_]*)/', $sql, $matches);
+        $parameterNames = array_values(array_unique($matches[1] ?? []));
+        $systemValues = [
+            'entry_id' => $entry?->id,
+            'journal_id' => $journal->id,
+            'division_id' => $entry?->division_id ?? $divisionId ?? request()->input('division_id') ?? session('user_division_id'),
+            'user_id' => $entry?->user_id ?? $userId ?? session('user_id'),
+        ];
+        $bindings = [];
+
+        foreach ($parameterNames as $name) {
+            if (array_key_exists($name, $data)) {
+                $bindings[$name] = $data[$name];
+                continue;
+            }
+
+            if (array_key_exists($name, $systemValues)) {
+                $bindings[$name] = $systemValues[$name];
+                continue;
+            }
+
+            $bindings[$name] = null;
+        }
+
+        return $bindings;
+    }
+
     private function validateNumericConstraints(array $schema, array $data): void
     {
         $fieldsByKey = collect($schema)->keyBy('key');
