@@ -13,6 +13,16 @@
         </div>
 
         <div class="d-flex gap-2">
+            <div class="btn-group">
+                <button class="btn btn-outline-warning dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                    <i class="bi bi-magic"></i>
+                    Мастер создания
+                </button>
+                <ul class="dropdown-menu dropdown-menu-dark">
+                    <li><button class="dropdown-item journal-preset-btn" type="button" data-preset="warehouse_receipt">Создать журнал прихода</button></li>
+                    <li><button class="dropdown-item journal-preset-btn" type="button" data-preset="warehouse_issue">Создать журнал расхода</button></li>
+                </ul>
+            </div>
             <button class="btn btn-outline-light" id="importTemplateBtn">
                 <i class="bi bi-upload"></i>
                 Импорт
@@ -252,6 +262,36 @@
         const directories = @json($directories);
         const journalTemplateRoutes = @json($journalTemplateRoutes);
         const journalTemplateCanModifyUsed = @json($journalTemplateCanModifyUsed ?? true);
+        const journalWizardPresets = {
+            warehouse_receipt: {
+                title: 'Складской журнал: приход',
+                name: 'Получение номенклатуры на склад',
+                code: 'warehouse_receipt',
+                description: 'Приход номенклатуры на склад от поставщика или внутреннего источника',
+                schema: [
+                    { key: 'receipt_number', label: 'Номер документа', type: 'string', tab: 'Основное', required: true, filterable: true },
+                    { key: 'operation_date', label: 'Дата', type: 'date', tab: 'Основное', required: true, filterable: true },
+                    { key: 'item', label: 'Номенклатура', type: 'directory', tab: 'Основное', required: true, filterable: true, directory_code: 'warehouse_nomenclature', directory_display_field: 'name' },
+                    { key: 'quantity', label: 'Количество', type: 'number', tab: 'Основное', required: true, filterable: false, validation: { min: 0 } },
+                    { key: 'source', label: 'Откуда пришло', type: 'directory', tab: 'Основное', required: true, filterable: true, directory_code: 'warehouse_sources', directory_display_field: 'name' }
+                ]
+            },
+            warehouse_issue: {
+                title: 'Складской журнал: расход',
+                name: 'Выдача номенклатуры со склада',
+                code: 'warehouse_issue',
+                description: 'Выдача номенклатуры со склада в подразделения и цеха',
+                schema: [
+                    { key: 'item', label: 'Номенклатура', type: 'directory', tab: 'Основное', required: true, filterable: true, directory_code: 'warehouse_nomenclature', directory_display_field: 'name' },
+                    { key: 'item_number', label: 'Номер номенклатуры', type: 'sql', tab: 'Основное', required: true, filterable: true, sql_query: "SELECT json_extract(data, '$.item_number') FROM directory_values WHERE id = :item" },
+                    { key: 'unit', label: 'Единица измерения', type: 'sql', tab: 'Основное', required: true, filterable: true, sql_query: "SELECT json_extract(data, '$.unit') FROM directory_values WHERE id = :item" },
+                    { key: 'operation_date', label: 'Дата', type: 'date', tab: 'Основное', required: true, filterable: true },
+                    { key: 'quantity', label: 'Сколько отпущено', type: 'number', tab: 'Основное', required: true, filterable: false, validation: { min: 0 } },
+                    { key: 'workshop', label: 'В какой цех', type: 'directory', tab: 'Основное', required: true, filterable: true, directory_code: 'warehouse_workshops', directory_display_field: 'name' },
+                    { key: 'stock_balance', label: 'Сколько осталось на складе', type: 'sql', tab: 'Основное', required: true, filterable: false, sql_query: "SELECT ROUND(\nCOALESCE((\n    SELECT SUM(CAST(json_extract(data, '$.quantity') AS REAL))\n    FROM journal_entries\n    WHERE journal_template_id = (SELECT id FROM journal_templates WHERE code = 'warehouse_receipt' LIMIT 1)\n      AND deleted_at IS NULL\n      AND status != 'rejected'\n      AND CAST(json_extract(data, '$.item') AS INTEGER) = CAST(:item AS INTEGER)\n), 0)\n-\nCOALESCE((\n    SELECT SUM(CAST(json_extract(data, '$.quantity') AS REAL))\n    FROM journal_entries\n    WHERE journal_template_id = (SELECT id FROM journal_templates WHERE code = 'warehouse_issue' LIMIT 1)\n      AND deleted_at IS NULL\n      AND status != 'rejected'\n      AND CAST(json_extract(data, '$.item') AS INTEGER) = CAST(:item AS INTEGER)\n      AND (:entry_id IS NULL OR id != :entry_id)\n), 0)\n- COALESCE(CAST(:quantity AS REAL), 0), 3)" }
+                ]
+            }
+        };
 
         function journalTemplateRoute(name, id = null) {
             let url = journalTemplateRoutes[name] || '';
@@ -431,6 +471,61 @@
             fieldIndex = 0;
 
             renderFields();
+        }
+
+        function findDirectoryByCode(code) {
+            return directories.find(function (directory) {
+                return String(directory.code || '') === String(code || '');
+            }) || null;
+        }
+
+        function applyJournalPreset(presetKey) {
+            let preset = journalWizardPresets[presetKey];
+
+            if (!preset) {
+                return;
+            }
+
+            clearTemplateForm();
+            $('#templateModalTitle').text(preset.title || 'Создать журнал');
+            $('#templateName').val(preset.name || '');
+            $('#templateCode').val(preset.code || '');
+            $('#templateDescription').val(preset.description || '');
+            $('#templateIsActive').prop('checked', true);
+
+            fields = [];
+            fieldIndex = 0;
+
+            let missingDirectories = [];
+
+            (preset.schema || []).forEach(function (field) {
+                let preparedField = Object.assign({}, field);
+
+                if (preparedField.directory_code) {
+                    let linkedDirectory = findDirectoryByCode(preparedField.directory_code);
+
+                    if (linkedDirectory) {
+                        preparedField.directory_id = linkedDirectory.id;
+                    } else {
+                        preparedField.directory_id = '';
+                        missingDirectories.push(preparedField.directory_code);
+                    }
+
+                    delete preparedField.directory_code;
+                }
+
+                addField(preparedField);
+            });
+
+            if (!(preset.schema || []).length) {
+                renderFields();
+            }
+
+            templateModal.show();
+
+            if (missingDirectories.length) {
+                showToast('Часть связанных справочников не найдена: ' + missingDirectories.join(', '), 'warning');
+            }
         }
 
         function addField(data = null) {
@@ -919,6 +1014,10 @@
             templateModal.show();
         });
 
+        $(document).on('click', '.journal-preset-btn', function () {
+            applyJournalPreset($(this).data('preset'));
+        });
+
         $('#importTemplateBtn').on('click', function () {
             $('#importTemplateForm')[0].reset();
             importTemplateModal.show();
@@ -1109,7 +1208,7 @@
                     return;
                 }
 
-                if (!['number', 'calc'].includes(field.type)) {
+                if (!['number', 'calc', 'sql', 'directory'].includes(field.type)) {
                     return;
                 }
 

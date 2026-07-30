@@ -2,6 +2,9 @@
 
 namespace App\Providers;
 
+use App\Support\SqlDebugLogger;
+use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -23,6 +26,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot()
     {
-        //
+        DB::listen(function (QueryExecuted $query) {
+            SqlDebugLogger::handle($query);
+        });
     }
 }

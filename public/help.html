@@ -3,25 +3,24 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Инструкция пользователя и администратора — Электронные журналы</title>
+    <title>Хелп по системе журналов, справочников и шаблонов</title>
     <style>
         :root {
             --bg: #07111f;
             --bg2: #0b1728;
-            --panel: #101d32;
-            --panel2: #13243d;
+            --panel: rgba(16, 29, 50, .86);
+            --panel-2: rgba(20, 38, 64, .9);
             --text: #eaf2ff;
             --muted: #9fb1ca;
-            --border: rgba(132, 169, 218, .24);
+            --line: rgba(132, 169, 218, .22);
             --accent: #48b6ff;
-            --accent2: #6ee7b7;
+            --accent-2: #6ee7b7;
+            --warn: #ffd166;
             --danger: #ff6b6b;
-            --warning: #ffd166;
-            --ok: #5ee38c;
-            --shadow: 0 18px 45px rgba(0,0,0,.35);
+            --shadow: 0 18px 45px rgba(0, 0, 0, .35);
             --radius: 18px;
+            --font: "Segoe UI", Tahoma, Arial, sans-serif;
             --mono: Consolas, Monaco, "Courier New", monospace;
-            --font: Inter, Segoe UI, Roboto, Arial, sans-serif;
         }
 
         * { box-sizing: border-box; }
@@ -29,17 +28,23 @@
 
         body {
             margin: 0;
-            font-family: var(--font);
-            background:
-                radial-gradient(circle at 20% 0%, rgba(72,182,255,.18), transparent 32%),
-                radial-gradient(circle at 80% 10%, rgba(110,231,183,.12), transparent 35%),
-                linear-gradient(180deg, #06101e 0%, #091423 50%, #060b14 100%);
             color: var(--text);
+            font-family: var(--font);
             line-height: 1.65;
+            background:
+                radial-gradient(circle at 20% 0%, rgba(72, 182, 255, .18), transparent 32%),
+                radial-gradient(circle at 80% 12%, rgba(110, 231, 183, .1), transparent 30%),
+                linear-gradient(180deg, #06101e 0%, #091423 50%, #060b14 100%);
         }
 
-        a { color: var(--accent); text-decoration: none; }
-        a:hover { text-decoration: underline; }
+        a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
 
         .layout {
             display: grid;
@@ -52,33 +57,33 @@
             top: 0;
             height: 100vh;
             overflow: auto;
-            padding: 24px 18px;
-            background: rgba(7,17,31,.92);
-            border-right: 1px solid var(--border);
-            backdrop-filter: blur(12px);
+            padding: 24px 18px 32px;
+            border-right: 1px solid var(--line);
+            background: rgba(7, 17, 31, .92);
+            backdrop-filter: blur(14px);
         }
 
         .brand {
             display: flex;
             gap: 12px;
             align-items: center;
-            margin-bottom: 22px;
+            margin-bottom: 20px;
             padding: 14px;
-            border: 1px solid var(--border);
+            border: 1px solid var(--line);
             border-radius: var(--radius);
-            background: rgba(255,255,255,.04);
+            background: rgba(255, 255, 255, .04);
             box-shadow: var(--shadow);
         }
 
         .brand-icon {
-            width: 44px;
-            height: 44px;
+            width: 46px;
+            height: 46px;
+            border-radius: 14px;
             display: grid;
             place-items: center;
-            border-radius: 14px;
-            background: linear-gradient(135deg, var(--accent), #0ea5e9);
             font-weight: 800;
             color: #fff;
+            background: linear-gradient(135deg, var(--accent), #0ea5e9);
         }
 
         .brand-title {
@@ -88,49 +93,56 @@
         }
 
         .brand-subtitle {
+            margin-top: 4px;
             color: var(--muted);
             font-size: 12px;
-            margin-top: 2px;
         }
 
         .nav-title {
+            margin: 18px 10px 8px;
             color: var(--muted);
             font-size: 12px;
             text-transform: uppercase;
             letter-spacing: .08em;
-            margin: 20px 10px 8px;
         }
 
         .nav a {
             display: block;
-            padding: 9px 12px;
             margin: 4px 0;
-            border-radius: 12px;
-            color: #d9e8ff;
+            padding: 9px 12px;
             border: 1px solid transparent;
+            border-radius: 12px;
+            color: #d8e8ff;
         }
 
         .nav a:hover {
-            background: rgba(72,182,255,.1);
-            border-color: rgba(72,182,255,.2);
+            border-color: rgba(72, 182, 255, .24);
+            background: rgba(72, 182, 255, .08);
             text-decoration: none;
         }
 
         main {
-            padding: 34px;
-            max-width: 1180px;
             width: 100%;
+            max-width: 1240px;
+            padding: 34px;
+        }
+
+        .hero,
+        .section,
+        .card,
+        .meta-card {
+            border: 1px solid var(--line);
+            border-radius: var(--radius);
+            background: var(--panel);
+            box-shadow: var(--shadow);
         }
 
         .hero {
-            padding: 34px;
-            border: 1px solid var(--border);
-            border-radius: 28px;
-            background:
-                linear-gradient(135deg, rgba(72,182,255,.14), rgba(110,231,183,.08)),
-                rgba(16,29,50,.76);
-            box-shadow: var(--shadow);
             margin-bottom: 24px;
+            padding: 34px;
+            background:
+                linear-gradient(135deg, rgba(72, 182, 255, .14), rgba(110, 231, 183, .08)),
+                var(--panel);
         }
 
         .hero h1 {
@@ -140,10 +152,10 @@
         }
 
         .hero p {
-            max-width: 900px;
+            margin: 0;
+            max-width: 960px;
             color: #c7d8ef;
             font-size: 17px;
-            margin: 0;
         }
 
         .meta-grid {
@@ -153,14 +165,10 @@
             margin-top: 24px;
         }
 
-        .meta-card, .section, .card {
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
-            background: rgba(16,29,50,.82);
-            box-shadow: var(--shadow);
+        .meta-card {
+            padding: 16px;
         }
 
-        .meta-card { padding: 16px; }
         .meta-label {
             color: var(--muted);
             font-size: 12px;
@@ -170,8 +178,8 @@
 
         .meta-value {
             margin-top: 4px;
-            font-weight: 750;
             font-size: 17px;
+            font-weight: 750;
         }
 
         .section {
@@ -180,21 +188,27 @@
         }
 
         .section h2 {
-            margin: 0 0 12px;
+            margin: 0 0 14px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--line);
             font-size: 28px;
             line-height: 1.2;
-            border-bottom: 1px solid var(--border);
-            padding-bottom: 12px;
         }
 
         .section h3 {
-            margin-top: 26px;
-            margin-bottom: 10px;
+            margin: 24px 0 10px;
             font-size: 21px;
         }
 
-        .lead { color: #c7d8ef; font-size: 16px; }
-        .muted { color: var(--muted); }
+        .section h4 {
+            margin: 20px 0 8px;
+            font-size: 17px;
+        }
+
+        .lead {
+            color: #c7d8ef;
+            font-size: 16px;
+        }
 
         .cards {
             display: grid;
@@ -203,7 +217,9 @@
             margin: 18px 0;
         }
 
-        .card { padding: 18px; }
+        .card {
+            padding: 18px;
+        }
 
         .badge {
             display: inline-flex;
@@ -211,74 +227,91 @@
             gap: 6px;
             padding: 6px 10px;
             border-radius: 999px;
+            border: 1px solid rgba(255, 255, 255, .12);
+            background: rgba(255, 255, 255, .06);
             font-size: 12px;
             font-weight: 700;
-            border: 1px solid rgba(255,255,255,.12);
-            background: rgba(255,255,255,.06);
         }
 
-        .badge.info { background: rgba(72,182,255,.12); color: #9edbff; }
-        .badge.ok { background: rgba(94,227,140,.12); color: #a6f2bf; }
-        .badge.warn { background: rgba(255,209,102,.12); color: #ffe29b; }
-        .badge.danger { background: rgba(255,107,107,.14); color: #ffb3b3; }
+        .badge.info { background: rgba(72, 182, 255, .12); color: #9edbff; }
+        .badge.ok { background: rgba(110, 231, 183, .12); color: #a6f2bf; }
+        .badge.warn { background: rgba(255, 209, 102, .12); color: #ffe29b; }
+        .badge.danger { background: rgba(255, 107, 107, .14); color: #ffb3b3; }
 
         .notice {
-            margin-top: 16px;
+            margin-top: 14px;
             padding: 14px 16px;
             border-radius: 14px;
-            border: 1px solid rgba(72,182,255,.24);
-            background: rgba(72,182,255,.08);
+            border: 1px solid rgba(72, 182, 255, .26);
+            background: rgba(72, 182, 255, .08);
         }
 
         .notice.ok {
-            border-color: rgba(94,227,140,.24);
-            background: rgba(94,227,140,.08);
+            border-color: rgba(110, 231, 183, .26);
+            background: rgba(110, 231, 183, .08);
         }
 
         .notice.warn {
-            border-color: rgba(255,209,102,.24);
-            background: rgba(255,209,102,.08);
+            border-color: rgba(255, 209, 102, .26);
+            background: rgba(255, 209, 102, .08);
         }
 
         .notice.danger {
-            border-color: rgba(255,107,107,.24);
-            background: rgba(255,107,107,.08);
+            border-color: rgba(255, 107, 107, .26);
+            background: rgba(255, 107, 107, .08);
+        }
+
+        code,
+        pre {
+            font-family: var(--mono);
+        }
+
+        code {
+            padding: 2px 6px;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, .08);
+        }
+
+        pre {
+            overflow: auto;
+            margin: 14px 0;
+            padding: 14px 16px;
+            border: 1px solid rgba(255, 255, 255, .08);
+            border-radius: 14px;
+            background: rgba(5, 10, 18, .9);
+            color: #dff0ff;
         }
 
         table {
             width: 100%;
-            border-collapse: collapse;
             margin-top: 12px;
+            border-collapse: collapse;
             overflow: hidden;
             border-radius: 14px;
         }
 
-        th, td {
+        th,
+        td {
             padding: 12px 14px;
-            border: 1px solid rgba(255,255,255,.08);
+            border: 1px solid rgba(255, 255, 255, .08);
             vertical-align: top;
         }
 
         th {
+            background: rgba(255, 255, 255, .05);
             text-align: left;
-            background: rgba(255,255,255,.05);
         }
 
-        ul, ol { padding-left: 22px; }
-        code, pre { font-family: var(--mono); }
-        pre {
-            white-space: pre-wrap;
-            padding: 16px;
-            border-radius: 14px;
-            background: rgba(255,255,255,.04);
-            border: 1px solid rgba(255,255,255,.08);
-            overflow: auto;
+        ul,
+        ol {
+            padding-left: 22px;
         }
 
         .footer {
+            margin: 28px 0 10px;
             color: var(--muted);
             font-size: 13px;
-            padding: 10px 0 30px;
+            text-align: center;
         }
 
         @media (max-width: 980px) {
@@ -290,15 +323,16 @@
                 position: static;
                 height: auto;
                 border-right: 0;
-                border-bottom: 1px solid var(--border);
-            }
-
-            .meta-grid, .cards {
-                grid-template-columns: 1fr;
+                border-bottom: 1px solid var(--line);
             }
 
             main {
-                padding: 18px;
+                padding: 20px;
+            }
+
+            .meta-grid,
+            .cards {
+                grid-template-columns: 1fr;
             }
         }
     </style>
@@ -307,678 +341,747 @@
 <div class="layout">
     <aside class="sidebar">
         <div class="brand">
-            <div class="brand-icon">Ж</div>
+            <div class="brand-icon">JS</div>
             <div>
-                <div class="brand-title">Электронные журналы</div>
-                <div class="brand-subtitle">Инструкция администратора и пользователя</div>
+                <div class="brand-title">Хелп по системе</div>
+                <div class="brand-subtitle">Журналы, справочники, шаблоны, отчёты, печать</div>
             </div>
         </div>
 
         <div class="nav">
-            <div class="nav-title">Разделы</div>
-            <a href="#purpose">1. Назначение системы</a>
+            <div class="nav-title">Общее</div>
+            <a href="#start">1. С чего начать</a>
             <a href="#roles">2. Роли и доступы</a>
-            <a href="#setup">3. Первичная настройка</a>
-            <a href="#divisions">4. Подразделения</a>
-            <a href="#directories">5. Справочники</a>
-            <a href="#templates">6. Шаблоны журналов</a>
-            <a href="#fill-journal">7. Заполнение журнала</a>
-            <a href="#search-filter">8. Поиск и фильтрация</a>
-            <a href="#faq">9. Частые вопросы</a>
-            <a href="#checklists">10. Чек-листы</a>
+
+            <div class="nav-title">Шаблоны</div>
+            <a href="#directory-templates">3. Шаблоны справочников</a>
+            <a href="#journal-templates">4. Шаблоны журналов</a>
+            <a href="#print-templates">5. Шаблоны печати журналов</a>
+            <a href="#report-templates">6. Шаблоны отчётов</a>
+
+            <div class="nav-title">Практика</div>
+            <a href="#directory-values">7. Значения справочников</a>
+            <a href="#journal-work">8. Работа с журналами</a>
+            <a href="#imports">9. Импорт и экспорт</a>
+            <a href="#examples">10. Готовые примеры</a>
+
+            <div class="nav-title">Сервис</div>
+            <a href="#faq">11. Частые вопросы</a>
+            <a href="#checklists">12. Чек-листы</a>
         </div>
     </aside>
 
     <main>
         <section class="hero">
-            <h1>Инструкция по работе с системой электронных журналов</h1>
+            <h1>Полный хелп по созданию шаблонов и работе в системе</h1>
             <p>
-                Документ предназначен для супер-администраторов, администраторов, бригадиров и пользователей системы.
-                В инструкции описаны настройка подразделений, справочников, шаблонов журналов, фильтров и работа с удалёнными записями.
+                Этот документ описывает текущую логику системы полностью: как проектировать шаблоны справочников,
+                шаблоны журналов, шаблоны печати и отчёты, как правильно связывать их между собой, как использовать
+                формулы, SQL, скрытые поля, QR/штрихкоды, вкладки, импорт, экспорт и персональные доступы.
             </p>
 
             <div class="meta-grid">
                 <div class="meta-card">
-                    <div class="meta-label">Справочники</div>
-                    <div class="meta-value">Поля JSON по шаблону</div>
+                    <div class="meta-label">Кому подходит</div>
+                    <div class="meta-value">Суперадмину, админу, мастеру, пользователю</div>
                 </div>
                 <div class="meta-card">
-                    <div class="meta-label">Журналы</div>
-                    <div class="meta-value">Фильтры, полноэкранный режим, soft delete</div>
+                    <div class="meta-label">Главная идея</div>
+                    <div class="meta-value">Сначала шаблоны, потом данные, потом печать и отчёты</div>
                 </div>
                 <div class="meta-card">
-                    <div class="meta-label">Доступ</div>
-                    <div class="meta-value">С учётом иерархии подразделений</div>
+                    <div class="meta-label">Что важно</div>
+                    <div class="meta-value">Хорошая структура полей экономит много времени дальше</div>
                 </div>
             </div>
         </section>
 
-        <section id="purpose" class="section">
-            <h2>1. Назначение системы</h2>
+        <section id="start" class="section">
+            <h2>1. С чего начать</h2>
             <p class="lead">
-                Система электронных журналов предназначена для ведения производственных, технологических,
-                лабораторных и иных журналов в электронном виде.
+                Правильный порядок настройки системы почти всегда одинаковый. Если идти в другом порядке,
+                дальше начинаются лишние переделки.
             </p>
 
-            <div class="cards">
-                <div class="card">
-                    <h3>Основные задачи</h3>
-                    <ul>
-                        <li>создание шаблонов журналов без программирования;</li>
-                        <li>заполнение журналов по ролям и подразделениям;</li>
-                        <li>использование справочников со структурированными полями;</li>
-                        <li>контроль данных, фильтрация, просмотр и печать.</li>
-                    </ul>
-                </div>
-                <div class="card">
-                    <h3>Для кого подходит</h3>
-                    <ul>
-                        <li>производственным подразделениям;</li>
-                        <li>бригадирам и ответственным сотрудникам;</li>
-                        <li>администраторам, контролирующим данные и доступы.</li>
-                    </ul>
-                </div>
+            <ol>
+                <li>Создайте подразделения и настройте родительские связи.</li>
+                <li>Создайте пользователей и назначьте роли.</li>
+                <li>Создайте шаблоны справочников.</li>
+                <li>Заполните справочники значениями.</li>
+                <li>Создайте шаблоны журналов, используя готовые справочники.</li>
+                <li>Проверьте ввод записей в журнале на тестовых данных.</li>
+                <li>После этого добавляйте шаблоны печати и отчёты.</li>
+            </ol>
+
+            <div class="notice warn">
+                Если журнал использует справочник, этот справочник лучше продумать и заполнить заранее.
+                Тогда в журнале не придётся потом менять структуру полей.
             </div>
         </section>
 
         <section id="roles" class="section">
             <h2>2. Роли и доступы</h2>
-            <p>
-                Доступ к функциям зависит от роли пользователя, его подразделения и настроек шаблонов.
-                Для администраторов учитывается также иерархия подразделений.
-            </p>
 
-            <table>
-                <thead>
-                <tr>
-                    <th>Роль</th>
-                    <th>Возможности</th>
-                    <th>Ограничения</th>
-                </tr>
-                </thead>
-                <tbody>
-                <tr>
-                    <td><span class="badge info">Супер-админ</span></td>
-                    <td>Полное управление системой, подразделениями, шаблонами справочников, справочниками, журналами и доступами.</td>
-                    <td>Нет ограничений в рамках системы.</td>
-                </tr>
-                <tr>
-                    <td><span class="badge ok">Администратор</span></td>
-                    <td>Работает со своим подразделением и всеми дочерними. Может редактировать значения справочников, просматривать удалённые записи и восстанавливать их.</td>
-                    <td>Не изменяет глобальные настройки супер-админа.</td>
-                </tr>
-                <tr>
-                    <td><span class="badge warn">Бригадир</span></td>
-                    <td>Заполняет журналы, просматривает записи своего подразделения, добавляет и редактирует значения доступных справочников.</td>
-                    <td>Не удаляет значения справочников и не меняет системные шаблоны.</td>
-                </tr>
-                <tr>
-                    <td><span class="badge">Пользователь</span></td>
-                    <td>Заполняет доступные журналы и просматривает разрешённые записи.</td>
-                    <td>Работает только с доступными журналами.</td>
-                </tr>
-                </tbody>
-            </table>
+            <div class="cards">
+                <div class="card">
+                    <span class="badge info">Суперадмин</span>
+                    <p>
+                        Имеет доступ ко всей системе, всем подразделениям, всем журналам, справочникам, отчётам,
+                        экспорту базы, импорту базы, SQL-разделу и глобальным настройкам.
+                    </p>
+                </div>
+                <div class="card">
+                    <span class="badge ok">Админ</span>
+                    <p>
+                        Работает в своём дереве подразделений. Может получать доступ к редактированию значений,
+                        к журналам, к отчётам. При отдельной галочке может редактировать свои шаблоны справочников
+                        и свои шаблоны журналов.
+                    </p>
+                </div>
+                <div class="card">
+                    <span class="badge warn">Foreman</span>
+                    <p>
+                        Может работать с доступными журналами, а также добавлять и редактировать значения справочников,
+                        если у него есть доступ к ним. Удаление значений обычно оставлено администратору.
+                    </p>
+                </div>
+                <div class="card">
+                    <span class="badge">Worker</span>
+                    <p>
+                        Обычно только заполняет доступные журналы и использует уже подготовленные справочники.
+                    </p>
+                </div>
+            </div>
 
-            <div class="notice warn">
-                Если пользователь не видит нужный журнал или справочник, проверьте его роль, подразделение,
-                родительское подразделение и доступы к шаблону журнала.
+            <div class="notice">
+                Важная логика доступа: админ родительского подразделения видит журналы и справочники дочерних подразделений.
             </div>
         </section>
 
-        <section id="setup" class="section">
-            <h2>3. Первичная настройка</h2>
-            <ol>
-                <li>Создайте подразделения и при необходимости задайте родительские связи.</li>
-                <li>Создайте пользователей и назначьте им роли.</li>
-                <li>Супер-админ настраивает шаблоны справочников.</li>
-                <li>Создайте справочники и заполните их значениями.</li>
-                <li>Создайте шаблоны журналов и включите фильтры только у нужных полей.</li>
-                <li>Проверьте тестовое заполнение журнала и отображение значений из справочников.</li>
-            </ol>
-        </section>
-
-        <section id="divisions" class="section">
-            <h2>4. Подразделения</h2>
-            <p>
-                Подразделения используются для разграничения доступа к пользователям, справочникам, шаблонам и записям журналов.
-                У подразделения можно указать родителя.
+        <section id="directory-templates" class="section">
+            <h2>3. Шаблоны справочников</h2>
+            <p class="lead">
+                Шаблон справочника определяет, какие поля будут у каждой записи справочника. После создания шаблона
+                значения справочника хранятся в JSON, а отображаемое значение собирается из данных записи.
             </p>
 
-            <h3>Как настроить</h3>
-            <ol>
-                <li>Откройте раздел <strong>Подразделения</strong>.</li>
-                <li>Создайте новое подразделение или откройте существующее.</li>
-                <li>Укажите название и при необходимости выберите <strong>родительское подразделение</strong>.</li>
-                <li>Сохраните изменения.</li>
-            </ol>
-
-            <div class="notice ok">
-                Если администратор назначен на родительское подразделение, он получает доступ к журналам и справочникам
-                всех дочерних подразделений.
-            </div>
-        </section>
-
-        <section id="directories" class="section">
-            <h2>5. Справочники</h2>
+            <h3>3.1. Где создаются</h3>
             <p>
-                Справочник теперь может хранить не одно текстовое значение, а набор полей в формате JSON по шаблону справочника.
+                Суперадмин создаёт шаблоны в разделе <strong>Шаблоны справочников</strong>.
+                Админ с разрешением на свои шаблоны работает в отдельной своей версии этого раздела
+                и может редактировать только созданные им шаблоны.
             </p>
 
-            <h3>Шаблон справочника</h3>
-            <p>
-                Шаблон справочника создаёт супер-админ. В шаблоне доступны поля типов:
-                текст, число, дата, время и список.
-            </p>
-            <ul>
-                <li>у каждого поля есть название и системный ключ;</li>
-                <li>поле можно сделать обязательным;</li>
-                <li>поле можно отметить как <strong>Уникальное</strong>;</li>
-                <li>для поля типа список задаются варианты выбора.</li>
-            </ul>
-
-            <h3>Типы полей справочника и когда их использовать</h3>
-            <table>
-                <thead>
-                <tr>
-                    <th>Тип</th>
-                    <th>Когда выбирать</th>
-                    <th>Пример поля</th>
-                    <th>Практический совет</th>
-                </tr>
-                </thead>
-                <tbody>
-                <tr>
-                    <td>Текст</td>
-                    <td>Для названий, артикулов, комментариев и любых строк.</td>
-                    <td>Название детали, инвентарный номер</td>
-                    <td>Если значение не должно повторяться, включите <strong>Уникальное</strong>.</td>
-                </tr>
-                <tr>
-                    <td>Число</td>
-                    <td>Для количества, веса, нормы, размера, цены.</td>
-                    <td>Вес, длина, остаток</td>
-                    <td>Не храните число текстом, иначе фильтрация и сравнение будут неудобнее.</td>
-                </tr>
-                <tr>
-                    <td>Дата</td>
-                    <td>Для дат ввода, поверки, изготовления, окончания срока.</td>
-                    <td>Дата поверки</td>
-                    <td>Используйте дату, когда важна сортировка по календарю.</td>
-                </tr>
-                <tr>
-                    <td>Время</td>
-                    <td>Для расписаний, смен, контрольных точек.</td>
-                    <td>Время начала смены</td>
-                    <td>Не используйте текст вроде "08:00", если поле потом нужно фильтровать.</td>
-                </tr>
-                <tr>
-                    <td>Список</td>
-                    <td>Когда вариантов немного и они заранее известны.</td>
-                    <td>Тип: инструмент / крепёж / расходник</td>
-                    <td>Подходит для статусов, категорий, размеров, групп.</td>
-                </tr>
-                <tr>
-                    <td>Справочник</td>
-                    <td>Когда значение нужно выбирать из другого справочника.</td>
-                    <td>Место хранения, ответственное лицо</td>
-                    <td>После выбора справочника укажите поле, которое будет показываться пользователю.</td>
-                </tr>
-                <tr>
-                    <td>QR / штрихкод</td>
-                    <td>Для быстрого поиска объекта сканером.</td>
-                    <td>Код детали, код инструмента</td>
-                    <td>Можно вводить вручную или включить автогенерацию, если код не приходит извне.</td>
-                </tr>
-                </tbody>
-            </table>
-
-            <h3>Правила хорошего шаблона справочника</h3>
-            <ul>
-                <li>Ключ поля пишите латиницей без пробелов: <code>name</code>, <code>inventory_number</code>, <code>storage_place</code>.</li>
-                <li>Название поля пишите понятно для пользователя: <strong>Название</strong>, <strong>Инвентарный номер</strong>, <strong>Место хранения</strong>.</li>
-                <li>Уникальность включайте только там, где повтор реально запрещён: артикул, QR-код, инвентарный номер.</li>
-                <li>Обязательными делайте только поля, без которых запись нельзя использовать.</li>
-                <li>Если поле часто ищут сканером, добавьте QR/штрихкод даже если отображаемым полем будет обычное название.</li>
-                <li>Если справочник уже заполнен, менять структуру шаблона нужно осторожно: старые записи могут не иметь новых полей.</li>
-            </ul>
-
-            <h3>Пример 1: справочник деталей</h3>
-            <p>
-                Такой справочник удобно использовать на рабочем экране, в журналах выдачи, списания и перемещения.
-            </p>
+            <h3>3.2. Общие поля шаблона справочника</h3>
             <table>
                 <thead>
                 <tr>
                     <th>Поле</th>
-                    <th>Ключ</th>
-                    <th>Тип</th>
-                    <th>Настройки</th>
+                    <th>Что означает</th>
                 </tr>
                 </thead>
                 <tbody>
                 <tr>
                     <td>Название</td>
-                    <td><code>name</code></td>
-                    <td>Текст</td>
-                    <td>Обязательное</td>
+                    <td>Человеческое имя справочника. Например: <code>Номенклатура</code>, <code>Цехи</code>, <code>Поставщики</code>.</td>
                 </tr>
                 <tr>
-                    <td>Артикул</td>
-                    <td><code>sku</code></td>
-                    <td>Текст</td>
-                    <td>Обязательное, уникальное</td>
+                    <td>Код</td>
+                    <td>Короткий системный код. Желательно уникальный и понятный. Например: <code>nomenclature</code>.</td>
                 </tr>
                 <tr>
-                    <td>Тип</td>
-                    <td><code>type</code></td>
-                    <td>Список</td>
-                    <td>Инструмент, крепёж, расходник, электрика</td>
+                    <td>Описание</td>
+                    <td>Свободная подсказка для администратора и пользователя.</td>
                 </tr>
                 <tr>
-                    <td>Место хранения</td>
-                    <td><code>storage_place</code></td>
-                    <td>Справочник</td>
-                    <td>Показывать поле <code>name</code> из справочника мест хранения</td>
+                    <td>Подразделения</td>
+                    <td>К каким подразделениям относится справочник.</td>
                 </tr>
                 <tr>
-                    <td>Штрихкод</td>
-                    <td><code>barcode</code></td>
-                    <td>QR / штрихкод</td>
-                    <td>Уникальное, можно автогенерировать</td>
+                    <td>Автор</td>
+                    <td>Кто создал шаблон. Это отображается в списке шаблонов.</td>
                 </tr>
                 </tbody>
             </table>
 
-            <pre>[
-  {"label":"Название","key":"name","type":"text","required":true},
-  {"label":"Артикул","key":"sku","type":"text","required":true,"unique":true},
-  {"label":"Тип","key":"type","type":"list","required":true,"options":["Инструмент","Крепёж","Расходник","Электрика"]},
-  {"label":"Место хранения","key":"storage_place","type":"directory","directory_display_field":"name"},
-  {"label":"Штрихкод","key":"barcode","type":"qr","unique":true,"auto_generate":true}
-]</pre>
+            <h3>3.3. Поля внутри записи справочника</h3>
+            <p>У каждой записи можно создавать следующие типы полей:</p>
 
-            <h3>Пример 2: справочник мест хранения</h3>
-            <table>
-                <thead>
-                <tr>
-                    <th>Поле</th>
-                    <th>Ключ</th>
-                    <th>Тип</th>
-                    <th>Настройки</th>
-                </tr>
-                </thead>
-                <tbody>
-                <tr>
-                    <td>Название</td>
-                    <td><code>name</code></td>
-                    <td>Текст</td>
-                    <td>Обязательное, уникальное</td>
-                </tr>
-                <tr>
-                    <td>Зона</td>
-                    <td><code>zone</code></td>
-                    <td>Список</td>
-                    <td>Склад, цех, ремонтная зона, архив</td>
-                </tr>
-                <tr>
-                    <td>Ответственный</td>
-                    <td><code>responsible</code></td>
-                    <td>Текст</td>
-                    <td>Необязательное</td>
-                </tr>
-                </tbody>
-            </table>
-
-            <div class="notice ok">
-                Хорошая практика: сначала создать простые справочники, от которых зависят остальные, например
-                <strong>Места хранения</strong>, <strong>Сотрудники</strong>, <strong>Типы деталей</strong>. Потом уже создавать справочник деталей,
-                который ссылается на них.
-            </div>
-
-            <h3>Создание справочника</h3>
-            <ol>
-                <li>Откройте раздел <strong>Справочники</strong>.</li>
-                <li>Нажмите <strong>Добавить справочник</strong>.</li>
-                <li>Введите название.</li>
-                <li>Выберите шаблон или настройте поля справочника.</li>
-                <li>Назначьте подразделения, которым доступен справочник.</li>
-                <li>Сохраните справочник.</li>
-            </ol>
-
-            <h3>Работа со значениями</h3>
-            <ul>
-                <li>админ и бригадир могут открывать справочник из меню и добавлять значения;</li>
-                <li>админ и бригадир могут редактировать существующие значения;</li>
-                <li>только админ может удалять значения справочника;</li>
-                <li>если для поля включена уникальность, система не даст сохранить дубликат.</li>
-            </ul>
-
-            <div class="notice warn">
-                Если значение справочника уже используется в журнале, перед удалением проверьте последствия.
-            </div>
-        </section>
-
-        <section id="templates" class="section">
-            <h2>6. Шаблоны журналов</h2>
-            <p>
-                Шаблон журнала определяет структуру формы, которую будут заполнять пользователи.
-            </p>
-
-            <h3>Типы полей</h3>
             <table>
                 <thead>
                 <tr>
                     <th>Тип поля</th>
-                    <th>Назначение</th>
+                    <th>Для чего нужен</th>
                     <th>Пример</th>
                 </tr>
                 </thead>
                 <tbody>
                 <tr>
-                    <td>Строка</td>
-                    <td>Свободный текст.</td>
-                    <td>Комментарий</td>
+                    <td><code>text</code></td>
+                    <td>Обычный текст</td>
+                    <td>Название, марка, описание</td>
                 </tr>
                 <tr>
+                    <td><code>number</code></td>
                     <td>Число</td>
-                    <td>Числовое значение.</td>
-                    <td>Температура</td>
+                    <td>Вес, цена, длина</td>
                 </tr>
                 <tr>
+                    <td><code>date</code></td>
                     <td>Дата</td>
-                    <td>Выбор даты.</td>
-                    <td>Дата проверки</td>
+                    <td>Дата выпуска, дата закупки</td>
                 </tr>
                 <tr>
+                    <td><code>time</code></td>
                     <td>Время</td>
-                    <td>Выбор времени.</td>
-                    <td>Время замера</td>
+                    <td>Время приёмки</td>
                 </tr>
                 <tr>
-                    <td>Список</td>
-                    <td>Выбор одного значения из набора.</td>
-                    <td>Норма / Не норма</td>
+                    <td><code>list</code></td>
+                    <td>Список фиксированных вариантов</td>
+                    <td>Статус: новый / в работе / списан</td>
                 </tr>
                 <tr>
-                    <td>Справочник</td>
-                    <td>Выбор значения из справочника.</td>
-                    <td>Оборудование</td>
+                    <td><code>qr</code></td>
+                    <td>QR или штрихкод</td>
+                    <td>Инвентарный код, бирка детали</td>
                 </tr>
                 <tr>
-                    <td>Расчётное поле</td>
-                    <td>Автоматический расчёт по формуле.</td>
-                    <td>Разница температур</td>
+                    <td><code>directory</code></td>
+                    <td>Ссылка на другой справочник</td>
+                    <td>Категория, поставщик, цех, место хранения</td>
                 </tr>
                 <tr>
-                    <td>SQL-запрос</td>
-                    <td>Выполняет серверный SELECT и сохраняет результат в поле записи.</td>
-                    <td>Остаток, связанное значение, последний номер</td>
+                    <td><code>calc</code></td>
+                    <td>Вычисляемое поле по формуле</td>
+                    <td><code>price * quantity</code></td>
                 </tr>
                 </tbody>
             </table>
 
-            <h3>Как настроить шаблон</h3>
-            <ol>
-                <li>Откройте раздел <strong>Шаблоны журналов</strong>.</li>
-                <li>Нажмите <strong>Создать шаблон</strong>.</li>
-                <li>Введите название журнала.</li>
-                <li>Добавьте нужные поля.</li>
-                <li>Для каждого поля задайте тип, обязательность и параметры.</li>
-                <li>Для поля типа <strong>справочник</strong> выберите сам справочник и укажите, какое поле будет отображаться в списке выбора.</li>
-                <li>Включите галочку <strong>Фильтр</strong> только у тех полей, по которым нужен фильтр в журнале.</li>
-                <li>Назначьте доступные подразделения и сохраните шаблон.</li>
-            </ol>
-
-            <h3>Как выбрать поле из справочника в журнале</h3>
-            <p>
-                Если в шаблоне журнала добавляется поле типа <strong>Справочник</strong>, нужно выбрать два параметра:
-                сам справочник и поле, которое будет видно в списке выбора. Например, справочник <strong>Детали</strong>
-                может хранить название, артикул, тип, место хранения и штрихкод, но в журнале пользователю удобнее видеть
-                <strong>Название</strong> или <strong>Артикул</strong>.
-            </p>
+            <h3>3.4. Настройки каждого поля</h3>
             <ul>
-                <li>Если пользователь выбирает глазами, отображайте понятное поле: <code>name</code>.</li>
-                <li>Если важна точность и много похожих названий, отображайте артикул или инвентарный номер: <code>sku</code>, <code>inventory_number</code>.</li>
-                <li>Если в справочнике есть QR/штрихкод, поиск сканером всё равно будет работать по нему, даже если отображается другое поле.</li>
+                <li><strong>Ключ поля</strong> нужен для хранения и формул. Пишите только латиницей: <code>name</code>, <code>part_number</code>, <code>weight</code>.</li>
+                <li><strong>Название поля</strong> видит пользователь.</li>
+                <li><strong>Вкладка</strong> группирует поля по вкладкам в форме добавления и редактирования.</li>
+                <li><strong>Обязательное</strong> запрещает сохранять запись без значения.</li>
+                <li><strong>Уникальное</strong> не даёт сохранить вторую запись с тем же значением в этом поле.</li>
             </ul>
 
-            <h3>Поле SQL-запрос</h3>
+            <h3>3.5. Поле типа список</h3>
             <p>
-                Поле типа <strong>SQL-запрос</strong> нужно для значения, которое система должна получить из базы и
-                сохранить прямо в запись журнала. Если значение уже сохранено, при обычном редактировании запрос повторно
-                не выполняется. Для ручного обновления значения в записи есть кнопка <strong>Пересчитать</strong>.
+                Для <code>list</code> перечислите варианты. Один вариант на одно значение логики.
+                Не делайте слишком длинные и размытые формулировки.
+            </p>
+            <pre>Тип:
+list
+
+Варианты:
+новый
+в работе
+списан</pre>
+
+            <h3>3.6. Поле типа QR/штрихкод</h3>
+            <ul>
+                <li>Можно разрешить ручной ввод.</li>
+                <li>Можно включить автогенерацию.</li>
+                <li>Если в справочнике есть хотя бы одно поле <code>qr</code>, система может искать запись по этому значению.</li>
+                <li>Штрихкоды можно печатать отдельно вместе с названиями записей.</li>
+            </ul>
+
+            <h3>3.7. Поле типа справочник</h3>
+            <p>
+                Это ссылка на другой справочник. Например, у номенклатуры можно выбрать справочник
+                <code>Единицы измерения</code>, <code>Поставщики</code>, <code>Категории</code>.
             </p>
             <ul>
-                <li>Запрос должен быть одним <code>SELECT</code> без точки с запятой и дополнительных команд.</li>
-                <li>Результат должен содержать одну колонку. Берётся значение из первой строки.</li>
-                <li>В запросе можно использовать поля записи как параметры: <code>:part</code>, <code>:quantity</code>, <code>:operation_date</code>.</li>
-                <li>Доступны системные параметры: <code>:entry_id</code>, <code>:journal_id</code>, <code>:division_id</code>, <code>:user_id</code>.</li>
-                <li>Для новой записи <code>:entry_id</code> ещё может быть пустым, поэтому такой запрос лучше пересчитать после первого сохранения.</li>
-            </ul>
-            <pre><code>SELECT name
-FROM directory_values
-WHERE id = :part</code></pre>
-
-            <h3>Пример: журнал выдачи и списания деталей</h3>
-            <table>
-                <thead>
-                <tr>
-                    <th>Поле журнала</th>
-                    <th>Ключ</th>
-                    <th>Тип</th>
-                    <th>Настройки</th>
-                </tr>
-                </thead>
-                <tbody>
-                <tr>
-                    <td>Дата операции</td>
-                    <td><code>operation_date</code></td>
-                    <td>Дата</td>
-                    <td>Обязательное, фильтр. По умолчанию в журнале ставится сегодняшняя дата.</td>
-                </tr>
-                <tr>
-                    <td>Деталь</td>
-                    <td><code>part</code></td>
-                    <td>Справочник</td>
-                    <td>Справочник <strong>Детали</strong>, отображать <code>name</code>, фильтр</td>
-                </tr>
-                <tr>
-                    <td>Операция</td>
-                    <td><code>operation</code></td>
-                    <td>Список</td>
-                    <td>Выдача, возврат, списание, перемещение; фильтр</td>
-                </tr>
-                <tr>
-                    <td>Количество</td>
-                    <td><code>quantity</code></td>
-                    <td>Число</td>
-                    <td>Обязательное</td>
-                </tr>
-                <tr>
-                    <td>Место хранения</td>
-                    <td><code>storage_place</code></td>
-                    <td>Справочник</td>
-                    <td>Справочник <strong>Места хранения</strong>, отображать <code>name</code>, фильтр</td>
-                </tr>
-                <tr>
-                    <td>Комментарий</td>
-                    <td><code>comment</code></td>
-                    <td>Строка</td>
-                    <td>Необязательное</td>
-                </tr>
-                </tbody>
-            </table>
-
-            <pre>[
-  {"key":"operation_date","label":"Дата операции","type":"date","required":true,"filterable":true},
-  {"key":"part","label":"Деталь","type":"directory","required":true,"filterable":true,"directory_display_field":"name"},
-  {"key":"operation","label":"Операция","type":"list","required":true,"filterable":true,"options":["Выдача","Возврат","Списание","Перемещение"]},
-  {"key":"quantity","label":"Количество","type":"number","required":true},
-  {"key":"storage_place","label":"Место хранения","type":"directory","filterable":true,"directory_display_field":"name"},
-  {"key":"comment","label":"Комментарий","type":"string"}
-]</pre>
-
-            <h3>Пример: журнал проверки оборудования</h3>
-            <table>
-                <thead>
-                <tr>
-                    <th>Поле</th>
-                    <th>Тип</th>
-                    <th>Зачем нужно</th>
-                </tr>
-                </thead>
-                <tbody>
-                <tr>
-                    <td>Дата проверки</td>
-                    <td>Дата</td>
-                    <td>Фильтрация по периоду и понятная история проверок.</td>
-                </tr>
-                <tr>
-                    <td>Оборудование</td>
-                    <td>Справочник</td>
-                    <td>Выбор из списка оборудования, поиск по названию или QR/штрихкоду.</td>
-                </tr>
-                <tr>
-                    <td>Состояние</td>
-                    <td>Список</td>
-                    <td>Исправно, требует ремонта, списать.</td>
-                </tr>
-                <tr>
-                    <td>Наработка часов</td>
-                    <td>Число</td>
-                    <td>Можно фильтровать и анализировать как число.</td>
-                </tr>
-                <tr>
-                    <td>Проверил</td>
-                    <td>Строка</td>
-                    <td>Краткая подпись или ФИО ответственного.</td>
-                </tr>
-                </tbody>
-            </table>
-
-            <h3>Частые ошибки при создании шаблона журнала</h3>
-            <ul>
-                <li>Не выбрано отображаемое поле у поля типа <strong>Справочник</strong>.</li>
-                <li>Слишком много полей отмечено как <strong>Фильтр</strong>, из-за этого форма фильтра становится перегруженной.</li>
-                <li>Ключи полей написаны по-русски или с пробелами. Используйте латиницу: <code>part</code>, <code>quantity</code>, <code>operation_date</code>.</li>
-                <li>Статусы заведены текстовым полем вместо списка. Для фиксированных вариантов лучше использовать <strong>Список</strong>.</li>
-                <li>В справочнике нет QR/штрихкода, хотя объект часто ищут сканером.</li>
+                <li>Нужно выбрать, на какой справочник идёт ссылка.</li>
+                <li>Форма умеет рекурсивно добавлять вложенные значения через кнопку <code>+</code>.</li>
+                <li>Можно строить цепочки хоть в несколько уровней: справочник в справочнике, внутри него ещё один справочник и так далее.</li>
             </ul>
 
             <div class="notice">
-                Если у справочника несколько полей, отображаемое поле обязательно.
-                Именно его пользователь будет видеть в выборе и в таблице журнала.
+                При экспорте значений справочника связанное поле теперь выгружается в двух видах:
+                исходный <code>id</code> и отдельное поле <code>_display</code> с человекочитаемым текстом.
             </div>
-        </section>
 
-        <section id="fill-journal" class="section">
-            <h2>7. Заполнение журнала</h2>
+            <h3>3.8. Поле типа формула</h3>
             <p>
-                Форма журнала строится автоматически на основании шаблона.
+                Формула нужна, если значение должно считаться автоматически по другим полям этой же записи.
+            </p>
+            <pre>price * quantity
+(width + height) / 2
+length * width * height</pre>
+
+            <ul>
+                <li>В формуле используйте ключи других полей.</li>
+                <li>Лучше использовать только числовые поля.</li>
+                <li>Результат сохраняется как вычисленное значение и руками не редактируется.</li>
+            </ul>
+
+            <h3>3.9. Отображаемое значение записи</h3>
+            <p>
+                Система старается показать первое подходящее заполненное поле записи как главное отображаемое значение.
+                Поэтому в большинстве справочников первым лучше ставить поле <code>name</code> или аналогичное.
             </p>
 
-            <h3>Правила заполнения</h3>
+            <h3>3.10. Когда нельзя менять или удалять шаблон справочника</h3>
             <ul>
-                <li>обязательные поля должны быть заполнены перед сохранением;</li>
-                <li>числовые поля принимают только числа;</li>
-                <li>поля даты и времени заполняются через встроенные элементы формы;</li>
-                <li>поля-справочники выбираются из списка с поиском;</li>
-                <li>в коротких списках строка поиска может скрываться, при этом остаётся иконка лупы;</li>
-                <li>расчётные поля не редактируются вручную.</li>
-            </ul>
-
-            <h3>Дополнительные возможности</h3>
-            <ul>
-                <li>журнал можно открыть кнопкой <strong>На весь экран</strong>;</li>
-                <li>в полноэкранном режиме доступны кнопки печати и добавления записи;</li>
-                <li>удаление записи работает как мягкое удаление: запись помечается удалённой, но не исчезает из базы;</li>
-                <li>админ может включить показ удалённых записей и восстановить запись кнопкой <strong>Восстановить</strong>.</li>
+                <li>Если справочник уже заполнен значениями, его шаблон менять нельзя.</li>
+                <li>Если справочник уже заполнен, удалить его тоже нельзя.</li>
+                <li>Это сделано специально, чтобы не ломать данные.</li>
             </ul>
         </section>
 
-        <section id="search-filter" class="section">
-            <h2>8. Поиск и фильтрация</h2>
-            <p>
-                В фильтрах журнала отображаются только те поля, у которых в конструкторе шаблона включена галочка <strong>Фильтр</strong>.
+        <section id="journal-templates" class="section">
+            <h2>4. Шаблоны журналов</h2>
+            <p class="lead">
+                Шаблон журнала определяет структуру записей, фильтры, скрытые поля, вычисления,
+                работу со справочниками и поведение формы ввода.
             </p>
 
-            <h3>Что можно фильтровать</h3>
+            <h3>4.1. Общие поля шаблона журнала</h3>
             <ul>
-                <li>период;</li>
-                <li>пользователя;</li>
-                <li>подразделение;</li>
-                <li>поля справочников и списков;</li>
-                <li>статус;</li>
-                <li>числовые значения;</li>
-                <li>текст комментария.</li>
+                <li><strong>Название журнала</strong> — например, <code>Поступление на склад</code>.</li>
+                <li><strong>Код</strong> — короткий системный код.</li>
+                <li><strong>Описание</strong> — пояснение для пользователей.</li>
+                <li><strong>Подразделения</strong> — кто работает с этим журналом.</li>
+                <li><strong>Автор</strong> — кто создал шаблон.</li>
             </ul>
 
-            <h3>Порядок работы</h3>
+            <h3>4.2. Типы полей журнала</h3>
+            <table>
+                <thead>
+                <tr>
+                    <th>Тип</th>
+                    <th>Назначение</th>
+                </tr>
+                </thead>
+                <tbody>
+                <tr>
+                    <td><code>text</code></td>
+                    <td>Текст, комментарий, обозначение</td>
+                </tr>
+                <tr>
+                    <td><code>number</code></td>
+                    <td>Количество, цена, длина, остаток</td>
+                </tr>
+                <tr>
+                    <td><code>date</code></td>
+                    <td>Дата события. При добавлении по умолчанию подставляется сегодняшняя дата.</td>
+                </tr>
+                <tr>
+                    <td><code>time</code></td>
+                    <td>Время события</td>
+                </tr>
+                <tr>
+                    <td><code>list</code></td>
+                    <td>Фиксированный набор вариантов</td>
+                </tr>
+                <tr>
+                    <td><code>directory</code></td>
+                    <td>Ссылка на справочник с хранением ID выбранного значения</td>
+                </tr>
+                <tr>
+                    <td><code>directory_text</code></td>
+                    <td>Обычно используется, когда нужен текст из связанного справочника для отображения или печати</td>
+                </tr>
+                <tr>
+                    <td><code>sql</code></td>
+                    <td>Поле, значение которого можно получить SQL-запросом</td>
+                </tr>
+                <tr>
+                    <td><code>calc</code></td>
+                    <td>Вычисление по другим полям журнала</td>
+                </tr>
+                <tr>
+                    <td><code>hidden</code></td>
+                    <td>Скрытое поле с значением по умолчанию, которое пользователь не видит при вводе</td>
+                </tr>
+                </tbody>
+            </table>
+
+            <h3>4.3. Что важно для каждого поля журнала</h3>
+            <ul>
+                <li><strong>Ключ</strong> нужен для хранения, SQL и формул.</li>
+                <li><strong>Название</strong> видит пользователь.</li>
+                <li><strong>Вкладка</strong> группирует поля формы на отдельные вкладки.</li>
+                <li><strong>Обязательное</strong> делает поле обязательным.</li>
+                <li><strong>Фильтр</strong> добавляет поле в фильтры журнала на экране просмотра.</li>
+            </ul>
+
+            <h3>4.4. Поле журнала типа справочник</h3>
+            <ul>
+                <li>Нужно выбрать справочник.</li>
+                <li>Нужно выбрать, какое поле этого справочника показывать пользователю в выпадающем списке.</li>
+                <li>Даже если показывается не QR-поле, поиск по QR всё равно работает, если QR есть внутри записи справочника.</li>
+                <li>Рядом с таким полем может быть кнопка добавления значения справочника и кнопка сканирования QR/штрихкода.</li>
+            </ul>
+
+            <h3>4.5. Поле SQL</h3>
+            <p>
+                Поле SQL нужно, когда значение берётся из базы по запросу.
+                Ожидается, что запрос возвращает одно поле и одно вычисленное значение.
+            </p>
+            <ul>
+                <li>Если в записи уже есть сохранённое значение этого поля, повторный автоматический расчёт не делается.</li>
+                <li>Для пересчёта есть отдельная кнопка <strong>Пересчитать</strong>.</li>
+                <li>Используйте такие поля осторожно: запрос должен быть понятным и быстрым.</li>
+            </ul>
+
+            <pre>Пример идеи:
+поле: stock_left
+логика: получить остаток по выбранной номенклатуре
+</pre>
+
+            <h3>4.6. Поле hidden</h3>
+            <p>
+                Скрытые поля не показываются пользователю в форме ввода, но сохраняются в записи.
+                Это удобно для технических признаков, служебных значений, источника записи,
+                кода процесса, статуса по умолчанию и похожих задач.
+            </p>
+
+            <h3>4.7. Ограничения числовых полей</h3>
+            <p>
+                Для числовых полей можно задавать сравнения:
+            </p>
+            <ul>
+                <li>не меньше числа;</li>
+                <li>не больше числа;</li>
+                <li>больше другого поля;</li>
+                <li>меньше другого поля.</li>
+            </ul>
+            <p>
+                Сравнение можно делать не только с другим числовым полем, но и с полем, которое приходит из
+                справочника или из SQL, если на выходе там тоже число.
+            </p>
+
+            <h3>4.8. Когда нельзя менять или удалять шаблон журнала</h3>
+            <ul>
+                <li>Если в журнале уже есть записи, редактировать его шаблон нельзя.</li>
+                <li>Если в журнале уже есть записи, удалить журнал тоже нельзя.</li>
+            </ul>
+        </section>
+
+        <section id="print-templates" class="section">
+            <h2>5. Шаблоны печати журналов</h2>
+            <p class="lead">
+                Шаблоны печати нужны, когда обычной табличной печати мало и нужен оформленный документ:
+                акт, маршрутный лист, сводка, накладная, ведомость и так далее.
+            </p>
+
+            <h3>5.1. Как это работает</h3>
+            <ul>
+                <li>Для журнала создаётся один или несколько шаблонов печати.</li>
+                <li>Пользователь открывает журнал, нажимает печать и выбирает нужный шаблон.</li>
+                <li>Фильтры текущего экрана учитываются при печати.</li>
+            </ul>
+
+            <h3>5.2. Что можно вставлять в шаблон</h3>
+            <ul>
+                <li>HTML-разметку: заголовки, таблицы, абзацы, подписи, блоки.</li>
+                <li>Поля журнала через шаблонные переменные.</li>
+                <li>Всю таблицу журнала одной вставкой.</li>
+            </ul>
+
+            <pre>{{ journal.name }}
+{{ print.date }}
+{{ table }}</pre>
+
+            <h3>5.3. Если HTML-шаблон пустой</h3>
+            <p>
+                Тогда система может использовать обычную табличную печать.
+            </p>
+
+            <h3>5.4. Подход к созданию шаблона печати</h3>
             <ol>
-                <li>Откройте нужный журнал.</li>
-                <li>Заполните нужные условия фильтра.</li>
-                <li>Нажмите <strong>Применить</strong>.</li>
-                <li>Для очистки используйте <strong>Сбросить</strong>.</li>
+                <li>Определите, печатается одна запись или сразу весь журнал по фильтрам.</li>
+                <li>Решите, нужен ли чистый HTML-шаблон или достаточно таблицы.</li>
+                <li>Добавьте заголовок, дату, подписи и таблицу.</li>
+                <li>Проверьте печать на пустых и на заполненных данных.</li>
             </ol>
+        </section>
 
-            <div class="notice ok">
-                Для администратора доступен отдельный просмотр удалённых записей, если нужно проверить или восстановить их.
+        <section id="report-templates" class="section">
+            <h2>6. Шаблоны отчётов</h2>
+            <p class="lead">
+                Отчёт — это отдельный шаблон, который пользователь выбирает и запускает. Он может строиться
+                вручную через SQL или автоматически через конструктор типовых отчётов.
+            </p>
+
+            <h3>6.1. Кто создаёт</h3>
+            <ul>
+                <li>Суперадмин создаёт любые отчёты.</li>
+                <li>Админ с разрешением на свои шаблоны может создавать свои отчёты в доступных пределах.</li>
+                <li>Пользователь отчёт не конструирует, а только запускает, если ему дан доступ.</li>
+            </ul>
+
+            <h3>6.2. Варианты построения отчётов</h3>
+            <div class="cards">
+                <div class="card">
+                    <span class="badge info">SQL-отчёт</span>
+                    <p>
+                        Полный контроль над выборкой. Подходит для сложных остатков, сводок, объединений,
+                        сравнений и расчётов.
+                    </p>
+                </div>
+                <div class="card">
+                    <span class="badge ok">Быстрый конструктор</span>
+                    <p>
+                        Удобен для типовых отчётов по одному журналу без ручного написания SQL.
+                    </p>
+                </div>
             </div>
+
+            <h3>6.3. Параметры отчёта</h3>
+            <p>
+                Параметры — это поля, которые пользователь заполняет перед запуском отчёта.
+                Они могут быть текстовыми, числовыми, датами, списками и справочниками.
+            </p>
+
+            <h3>6.4. Что важно при проектировании отчёта</h3>
+            <ul>
+                <li>Сразу продумайте, по каким полям пользователь реально будет фильтровать данные.</li>
+                <li>Если отчёт нужен многим, делайте параметры простыми и понятными.</li>
+                <li>Если отчёт можно собрать без SQL, лучше сначала попробовать конструктор.</li>
+                <li>Если отчёт должен печататься, заранее проверьте ширину колонок и названия столбцов.</li>
+            </ul>
+
+            <h3>6.5. Печать и экспорт отчётов</h3>
+            <p>
+                Пользователь может запускать доступный ему отчёт, просматривать результат и печатать его.
+                Также в системе есть настройка персональных доступов к отчётам.
+            </p>
+
+            <h3>6.6. Импорт и экспорт шаблонов отчётов</h3>
+            <p>
+                Шаблоны отчётов можно выгружать и загружать обратно. Это удобно для переноса между базами,
+                резервного хранения типовых шаблонов и клонирования сложных отчётов.
+            </p>
+        </section>
+
+        <section id="directory-values" class="section">
+            <h2>7. Значения справочников</h2>
+
+            <h3>7.1. Кто может работать со значениями</h3>
+            <ul>
+                <li>Foreman и admin могут добавлять значения в доступные им справочники из раздела справочников.</li>
+                <li>Admin может удалять значения.</li>
+                <li>Foreman и admin могут редактировать значения.</li>
+            </ul>
+
+            <h3>7.2. Как добавлять значения</h3>
+            <ul>
+                <li>Через раздел <strong>Справочники</strong>.</li>
+                <li>Прямо из журнала, если поле журнала ссылается на справочник.</li>
+                <li>Через вложенный рекурсивный <code>+</code>, если внутри записи есть ещё один связанный справочник.</li>
+            </ul>
+
+            <h3>7.3. Уникальность</h3>
+            <p>
+                Если в шаблоне поля стоит галочка <strong>Уникальное</strong>, система не даст сохранить вторую запись
+                с тем же значением. Это работает и при добавлении, и при редактировании.
+            </p>
+
+            <h3>7.4. Импорт и экспорт значений</h3>
+            <ul>
+                <li>Поддерживаются форматы <strong>CSV</strong> и <strong>XML</strong>.</li>
+                <li>Перед массовым импортом удобно сначала сделать экспорт и взять его как образец.</li>
+                <li>Для связанных полей выгружаются и системные значения, и человекочитаемое отображение.</li>
+            </ul>
+
+            <h3>7.5. Печать справочников и штрихкодов</h3>
+            <ul>
+                <li>Можно печатать весь справочник.</li>
+                <li>Можно печатать отдельные QR/штрихкоды вместе с названиями.</li>
+                <li>Печать доступна не только суперадмину, но и пользователям, у которых есть доступ к справочнику.</li>
+            </ul>
+        </section>
+
+        <section id="journal-work" class="section">
+            <h2>8. Работа с журналами</h2>
+
+            <h3>8.1. Что хранится в записи журнала</h3>
+            <ul>
+                <li>Значения всех полей шаблона.</li>
+                <li>Кто добавил запись.</li>
+                <li>Кто проверил запись.</li>
+                <li>Комментарии и история проверки.</li>
+                <li>Статус записи.</li>
+            </ul>
+
+            <h3>8.2. Удаление и восстановление</h3>
+            <p>
+                В журналах используется <strong>soft delete</strong>: запись не исчезает физически, а помечается как удалённая.
+                Администратор может включить показ удалённых записей и восстановить их кнопкой <strong>Восстановить</strong>.
+            </p>
+
+            <h3>8.3. Фильтры журнала</h3>
+            <ul>
+                <li>Фильтры по полям показываются только для тех полей, где в шаблоне включена галочка <strong>Фильтр</strong>.</li>
+                <li>Есть общий поиск, фильтры по датам, статусу, подразделению и удалённым записям.</li>
+            </ul>
+
+            <h3>8.4. Поля даты по умолчанию</h3>
+            <p>
+                При добавлении записи в поле типа <code>date</code> по умолчанию подставляется сегодняшняя дата.
+            </p>
+
+            <h3>8.5. Сохранение и закрытие</h3>
+            <p>
+                В форме записи есть две логики:
+            </p>
+            <ul>
+                <li><strong>Сохранить</strong> — сохраняет запись, но не закрывает модальное окно.</li>
+                <li><strong>Сохранить и закрыть</strong> — сохраняет и закрывает форму.</li>
+            </ul>
+        </section>
+
+        <section id="imports" class="section">
+            <h2>9. Импорт и экспорт</h2>
+
+            <h3>9.1. Что можно импортировать и экспортировать</h3>
+            <ul>
+                <li>значения справочников;</li>
+                <li>записи журналов;</li>
+                <li>шаблоны справочников;</li>
+                <li>шаблоны журналов;</li>
+                <li>шаблоны отчётов;</li>
+                <li>шаблоны печати журналов;</li>
+                <li>для суперадмина — всю базу данных целиком.</li>
+            </ul>
+
+            <h3>9.2. Форматы</h3>
+            <ul>
+                <li>Данные журналов и справочников: <strong>CSV</strong>, <strong>XML</strong>.</li>
+                <li>Шаблоны: обычно <strong>JSON</strong>.</li>
+                <li>База: файл SQLite целиком.</li>
+            </ul>
+
+            <h3>9.3. Практический совет</h3>
+            <p>
+                Если не уверены в формате импорта, сначала выгрузите один реальный объект из системы,
+                откройте файл и используйте его как точный образец для загрузки обратно.
+            </p>
+        </section>
+
+        <section id="examples" class="section">
+            <h2>10. Готовые примеры проектирования</h2>
+
+            <h3>10.1. Пример справочника «Номенклатура»</h3>
+            <pre>name            text       Название
+part_number     text       Номенклатурный номер, unique
+unit            directory  Ссылка на справочник единиц измерения
+category        directory  Ссылка на категории
+barcode         qr         Штрихкод, auto_generate
+weight          number     Вес
+description     text       Описание
+</pre>
+
+            <h3>10.2. Пример журнала «Поступление на склад»</h3>
+            <pre>doc_number      text
+doc_date        date
+nomenclature    directory
+quantity        number
+supplier        directory
+price           number
+sum_total       calc       price * quantity
+</pre>
+
+            <h3>10.3. Пример журнала «Выдача со склада»</h3>
+            <pre>issue_date      date
+nomenclature    directory
+quantity        number
+target_shop     directory
+stock_left      sql
+</pre>
+
+            <p>
+                Логика поля <code>stock_left</code>: получить остаток по выбранной номенклатуре как
+                поступление минус уже выданное количество.
+            </p>
+
+            <h3>10.4. Пример скрытых полей</h3>
+            <pre>source_type     hidden      warehouse
+operation_code  hidden      ISSUE
+</pre>
+
+            <h3>10.5. Пример формулы в справочнике</h3>
+            <pre>width           number
+height          number
+area            calc       width * height</pre>
         </section>
 
         <section id="faq" class="section">
-            <h2>9. Частые вопросы</h2>
+            <h2>11. Частые вопросы</h2>
 
             <h3>Почему пользователь не видит журнал?</h3>
             <p>
-                Проверьте роль пользователя, его подразделение, родительское подразделение и доступы к шаблону журнала.
+                Проверьте подразделение пользователя, его роль, персональные доступы к журналам
+                и принадлежность журнала к доступным подразделениям.
             </p>
 
-            <h3>Почему значение из справочника не отображается?</h3>
+            <h3>Почему не сохраняется запись справочника?</h3>
             <p>
-                Проверьте, привязан ли справочник к нужному подразделению и выбрано ли отображаемое поле в настройках поля журнала.
+                Обычно причина одна из трёх: не заполнено обязательное поле, нарушена уникальность,
+                или связанный справочник содержит некорректное значение.
             </p>
 
-            <h3>Почему нельзя сохранить значение справочника?</h3>
+            <h3>Почему в журнале не находится объект по QR?</h3>
             <p>
-                Обычно причина в незаполненном обязательном поле или нарушении уникальности.
-                Если поле отмечено как уникальное, одинаковое значение повторно сохранить нельзя.
+                Убедитесь, что в связанном справочнике есть поле типа <code>qr</code> и в записи реально сохранён код.
             </p>
 
-            <h3>Куда пропала удалённая запись журнала?</h3>
+            <h3>Почему нельзя отредактировать шаблон?</h3>
             <p>
-                Запись не удаляется окончательно, а помечается как удалённая.
-                Администратор может включить показ удалённых записей и восстановить её.
+                Если журнал уже содержит записи или справочник уже заполнен значениями, шаблон специально блокируется,
+                чтобы структура не разошлась с существующими данными.
+            </p>
+
+            <h3>Почему в экспорте справочника появились дополнительные поля с суффиксом <code>_display</code>?</h3>
+            <p>
+                Это сделано специально для удобства. Основное поле хранит системное значение ссылки, а поле
+                <code>_display</code> показывает человеку, что именно было выбрано в связанном справочнике.
             </p>
         </section>
 
         <section id="checklists" class="section">
-            <h2>10. Чек-листы</h2>
+            <h2>12. Чек-листы</h2>
 
-            <h3>Чек-лист администратора</h3>
+            <h3>Чек-лист по созданию шаблона справочника</h3>
             <ul>
-                <li>созданы подразделения и настроены родительские связи;</li>
-                <li>созданы пользователи и назначены роли;</li>
-                <li>созданы шаблоны справочников;</li>
-                <li>созданы справочники и заполнены значениями;</li>
-                <li>для шаблонов журналов выбраны отображаемые поля справочников;</li>
-                <li>включены только нужные фильтры полей;</li>
-                <li>проверено тестовое заполнение журнала.</li>
+                <li>Название понятное и короткое.</li>
+                <li>Код шаблона системный и логичный.</li>
+                <li>Первое текстовое поле выбрано как главное отображаемое.</li>
+                <li>У обязательных полей стоит галочка.</li>
+                <li>У действительно уникальных полей включена уникальность.</li>
+                <li>Связанные справочники уже существуют.</li>
+                <li>Формулы проверены на тестовых данных.</li>
             </ul>
 
-            <h3>Чек-лист пользователя</h3>
+            <h3>Чек-лист по созданию шаблона журнала</h3>
             <ul>
-                <li>выбран правильный журнал;</li>
-                <li>заполнены обязательные поля;</li>
-                <li>значения из справочников выбраны корректно;</li>
-                <li>ошибки валидации отсутствуют;</li>
-                <li>запись появилась в таблице после сохранения.</li>
+                <li>Все нужные справочники уже сделаны.</li>
+                <li>Для поля типа справочник выбрано отображаемое поле.</li>
+                <li>Фильтр включён только там, где он нужен пользователю.</li>
+                <li>Вкладки формы продуманы и не перегружают экран.</li>
+                <li>SQL-поля протестированы на реальных данных.</li>
+                <li>Скрытые поля имеют правильные значения по умолчанию.</li>
+            </ul>
+
+            <h3>Чек-лист по созданию отчёта</h3>
+            <ul>
+                <li>Понятно, кто и зачем его будет запускать.</li>
+                <li>Поля параметров названы человеческим языком.</li>
+                <li>SQL возвращает только нужные колонки.</li>
+                <li>Проверены пустые результаты и большие выборки.</li>
+                <li>Настроены права доступа к отчёту.</li>
             </ul>
         </section>
 
         <div class="footer">
-            Инструкция подготовлена для системы электронных журналов. Документ можно сохранить в PDF через функцию печати браузера.
+            Этот хелп описывает актуальную логику системы на 29 июля 2026 года.
+            Документ можно открыть отдельно, распечатать или сохранить в PDF через печать браузера.
         </div>
     </main>
 </div>

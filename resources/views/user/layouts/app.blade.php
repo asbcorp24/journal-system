@@ -16,6 +16,16 @@
 </head>
 <body>
 
+@php
+    $canViewReportsMenu = session('user_role') === 'admin';
+
+    if (!$canViewReportsMenu && session('user_id')) {
+        $canViewReportsMenu = \App\Models\UserReportPermission::query()
+            ->where('user_id', session('user_id'))
+            ->exists();
+    }
+@endphp
+
 <nav class="navbar navbar-expand-lg navbar-dark px-3">
     <button class="btn btn-outline-light btn-sm me-2 mobile-menu-btn"
             type="button"
@@ -80,6 +90,13 @@
                 <i class="bi bi-graph-up"></i>
                 Графики
             </a>
+            @if(session('user_role') === 'foreman' || session('user_role') === 'admin')
+                <a href="{{ route('user.leader-dashboard') }}"
+                   class="{{ request()->routeIs('user.leader-dashboard') ? 'active' : '' }}">
+                    <i class="bi bi-speedometer2"></i>
+                    Дашборд
+                </a>
+            @endif
             <a href="{{ route('user.directories.index') }}"
                class="{{ request()->routeIs('user.directories.*') ? 'active' : '' }}">
                 <i class="bi bi-card-list"></i>
@@ -116,7 +133,7 @@
                 <i class="bi bi-bell"></i>
                 Уведомления
             </a>
-            @if(session('user_role') === 'admin')
+            @if($canViewReportsMenu)
                 <a href="{{ route('user.reports.index') }}"
                    class="{{ request()->routeIs('user.reports.*') ? 'active' : '' }}">
                     <i class="bi bi-file-earmark-spreadsheet"></i>
@@ -170,6 +187,13 @@
             <i class="bi bi-card-list"></i>
             Справочники
         </a>
+        @if(session('user_role') === 'foreman' || session('user_role') === 'admin')
+            <a href="{{ route('user.leader-dashboard') }}"
+               class="{{ request()->routeIs('user.leader-dashboard') ? 'active' : '' }}">
+                <i class="bi bi-speedometer2"></i>
+                Дашборд
+            </a>
+        @endif
         @if(session('user_role') === 'admin' && session('can_edit_directory_templates'))
             <a href="{{ route('user.directory-templates.index') }}"
                class="{{ request()->routeIs('user.directory-templates.*') || request()->routeIs('user.directory-template-values.*') ? 'active' : '' }}">
@@ -202,7 +226,7 @@
             Уведомления
         </a>
 
-        @if(session('user_role') === 'admin')
+        @if($canViewReportsMenu)
             <a href="{{ route('user.reports.index') }}"
                class="{{ request()->routeIs('user.reports.*') ? 'active' : '' }}">
                 <i class="bi bi-file-earmark-spreadsheet"></i>
@@ -249,6 +273,56 @@
         }
     });
 
+    function injectChatMenuLinks() {
+        let chatUrl = "{{ route('user.chat.index') }}";
+        let currentPath = window.location.pathname;
+        let activeClass = currentPath === chatUrl ? 'active' : '';
+        let desktopLink = `
+            <a href="${chatUrl}" class="${activeClass}" data-chat-menu-link="desktop">
+                <i class="bi bi-chat-dots"></i>
+                Чат
+            </a>
+        `;
+        let mobileLink = `
+            <a href="${chatUrl}" class="${activeClass}" data-chat-menu-link="mobile">
+                <i class="bi bi-chat-dots"></i>
+                Чат
+            </a>
+        `;
+
+        if (!$('[data-chat-menu-link="desktop"]').length) {
+            $('#desktopSidebar a[href="{{ route('user.charts.index') }}"]').after(desktopLink);
+        }
+
+        if (!$('[data-chat-menu-link="mobile"]').length) {
+            $('#mobileSidebar a[href="{{ route('user.directories.index') }}"]').after(mobileLink);
+        }
+    }
+
+    function injectHelpMenuLinks() {
+        let helpUrl = "{{ asset('help.html') }}";
+        let desktopLink = `
+            <a href="${helpUrl}" target="_blank" rel="noopener" data-help-menu-link="desktop">
+                <i class="bi bi-question-circle"></i>
+                Хелп
+            </a>
+        `;
+        let mobileLink = `
+            <a href="${helpUrl}" target="_blank" rel="noopener" data-help-menu-link="mobile">
+                <i class="bi bi-question-circle"></i>
+                Хелп
+            </a>
+        `;
+
+        if (!$('[data-help-menu-link="desktop"]').length) {
+            $('#desktopSidebar a[href="{{ route('user.notifications.index') }}"]').after(desktopLink);
+        }
+
+        if (!$('[data-help-menu-link="mobile"]').length) {
+            $('#mobileSidebar a[href="{{ route('user.notifications.index') }}"]').after(mobileLink);
+        }
+    }
+
     function applySidebarState(collapsed) {
         $('body').toggleClass('sidebar-collapsed', collapsed);
         $('#sidebarToggle')
@@ -260,6 +334,8 @@
 
     $(function () {
         let collapsed = localStorage.getItem('userSidebarCollapsed') === '1';
+        injectChatMenuLinks();
+        injectHelpMenuLinks();
         applySidebarState(collapsed);
 
         $('#desktopSidebar a').each(function () {
@@ -614,6 +690,16 @@
         display: flex;
         flex-direction: column;
         gap: 8px;
+    }
+
+    .input-group > .searchable-select-box {
+        flex: 1 1 auto;
+        min-width: 0;
+    }
+
+    .input-group > .searchable-select-box + .btn {
+        position: relative;
+        z-index: 2;
     }
 
     .searchable-select-input-wrap {

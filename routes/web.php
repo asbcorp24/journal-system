@@ -9,9 +9,11 @@ use App\Http\Controllers\Admin\ReportTemplateController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Auth\UserAuthController;
 use App\Http\Controllers\User\ChartController;
+use App\Http\Controllers\User\ChatController;
 use App\Http\Controllers\User\DashboardController;
 use App\Http\Controllers\User\DirectoryController as UserDirectoryController;
 use App\Http\Controllers\User\DirectoryTemplateController;
+use App\Http\Controllers\User\FavoriteController;
 use App\Http\Controllers\User\JournalController;
 use App\Http\Controllers\User\JournalPrintTemplateController as UserJournalPrintTemplateController;
 use App\Http\Controllers\User\JournalTemplateEditorController;
@@ -33,6 +35,7 @@ Route::get('/logout', [UserAuthController::class, 'logout'])->name('user.logout'
 
 Route::middleware('user.auth')->group(function () {
     Route::get('/journals', [DashboardController::class, 'index'])->name('user.dashboard');
+    Route::get('/leader-dashboard', [DashboardController::class, 'leader'])->name('user.leader-dashboard');
     Route::get('/journals/{journal}', [JournalController::class, 'show'])
         ->name('user.journals.show');
 
@@ -41,6 +44,12 @@ Route::middleware('user.auth')->group(function () {
 
     Route::post('/journals/{journal}/entries', [JournalController::class, 'store'])
         ->name('user.journals.entries.store');
+
+    Route::get('/journals/{journal}/export/{format}', [JournalController::class, 'export'])
+        ->name('user.journals.export');
+
+    Route::post('/journals/{journal}/import/{format}', [JournalController::class, 'import'])
+        ->name('user.journals.import');
 
     Route::get('/journals/{journal}/entries/{entry}', [JournalController::class, 'showEntry'])
         ->withTrashed()
@@ -77,6 +86,9 @@ Route::middleware('user.auth')->group(function () {
 
     Route::post('/reports/{report}/export', [ReportController::class, 'export'])
         ->name('user.reports.export');
+
+    Route::post('/reports/{report}/print', [ReportController::class, 'print'])
+        ->name('user.reports.print');
     Route::get('/journals/{journal}/print', [JournalController::class, 'print'])
         ->name('user.journals.print');
 
@@ -134,14 +146,41 @@ Route::middleware('user.auth')->group(function () {
     Route::get('/charts/data', [ChartController::class, 'data'])
         ->name('user.charts.data');
 
+    Route::get('/chat', [ChatController::class, 'index'])
+        ->name('user.chat.index');
+
+    Route::get('/chat/contacts', [ChatController::class, 'contacts'])
+        ->name('user.chat.contacts');
+
+    Route::get('/chat/general/messages', [ChatController::class, 'generalMessages'])
+        ->name('user.chat.general-messages');
+
+    Route::post('/chat/general/messages', [ChatController::class, 'storeGeneral'])
+        ->name('user.chat.general-store');
+
+    Route::get('/chat/users/{user}/messages', [ChatController::class, 'messages'])
+        ->name('user.chat.messages');
+
+    Route::post('/chat/users/{user}/messages', [ChatController::class, 'store'])
+        ->name('user.chat.store');
+
     Route::get('/directories', [UserDirectoryController::class, 'index'])
         ->name('user.directories.index');
+
+    Route::post('/favorites/toggle', [FavoriteController::class, 'toggle'])
+        ->name('user.favorites.toggle');
 
     Route::get('/directories/list', [UserDirectoryController::class, 'list'])
         ->name('user.directories.list');
 
     Route::get('/directories/{directory}/values', [UserDirectoryController::class, 'valuesList'])
         ->name('user.directories.values.list');
+
+    Route::get('/directories/{directory}/export/{format}', [UserDirectoryController::class, 'export'])
+        ->name('user.directories.export');
+
+    Route::post('/directories/{directory}/import/{format}', [UserDirectoryController::class, 'import'])
+        ->name('user.directories.import');
 
     Route::get('/directories/{directory}/print', [UserDirectoryController::class, 'print'])
         ->name('user.directories.print');
@@ -275,6 +314,9 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('/users/{user}/permissions', [UserController::class, 'permissions'])->name('users.permissions');
         Route::post('/users/{user}/permissions', [UserController::class, 'storePermission'])->name('users.permissions.store');
         Route::delete('/users/{user}/permissions/{permission}', [UserController::class, 'destroyPermission'])->name('users.permissions.destroy');
+        Route::get('/users/{user}/report-permissions', [UserController::class, 'reportPermissions'])->name('users.report-permissions');
+        Route::post('/users/{user}/report-permissions', [UserController::class, 'storeReportPermission'])->name('users.report-permissions.store');
+        Route::delete('/users/{user}/report-permissions/{permission}', [UserController::class, 'destroyReportPermission'])->name('users.report-permissions.destroy');
 
 
         Route::get('/directories', [DirectoryController::class, 'index'])->name('directories.index');
@@ -317,11 +359,16 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('/reports', [ReportTemplateController::class, 'index'])->name('reports.index');
         Route::get('/reports/list', [ReportTemplateController::class, 'list'])->name('reports.list');
         Route::post('/reports', [ReportTemplateController::class, 'store'])->name('reports.store');
+        Route::post('/reports/import', [ReportTemplateController::class, 'import'])->name('reports.import');
         Route::get('/reports/{report}', [ReportTemplateController::class, 'show'])->name('reports.show');
         Route::post('/reports/{report}', [ReportTemplateController::class, 'update'])->name('reports.update');
         Route::delete('/reports/{report}', [ReportTemplateController::class, 'destroy'])->name('reports.destroy');
+        Route::get('/reports/{report}/export', [ReportTemplateController::class, 'export'])->name('reports.export');
         Route::get('/database', [DatabaseMaintenanceController::class, 'index'])->name('database.index');
         Route::get('/database/export', [DatabaseMaintenanceController::class, 'export'])->name('database.export');
         Route::post('/database/import', [DatabaseMaintenanceController::class, 'import'])->name('database.import');
+        Route::post('/database/sql', [DatabaseMaintenanceController::class, 'runSql'])->name('database.sql');
+        Route::post('/database/debug', [DatabaseMaintenanceController::class, 'updateDebug'])->name('database.debug');
+        Route::post('/database/debug/clear', [DatabaseMaintenanceController::class, 'clearDebugLogs'])->name('database.debug.clear');
     });
 });

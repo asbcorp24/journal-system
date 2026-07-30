@@ -13,6 +13,17 @@
         </div>
 
         <div class="d-flex gap-2">
+            <div class="btn-group">
+                <button class="btn btn-outline-warning dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                    <i class="bi bi-magic"></i>
+                    Мастер создания
+                </button>
+                <ul class="dropdown-menu dropdown-menu-dark">
+                    <li><button class="dropdown-item directory-preset-btn" type="button" data-preset="warehouse_nomenclature">Создать складской справочник номенклатуры</button></li>
+                    <li><button class="dropdown-item directory-preset-btn" type="button" data-preset="warehouse_sources">Создать справочник источников поступления</button></li>
+                    <li><button class="dropdown-item directory-preset-btn" type="button" data-preset="warehouse_workshops">Создать справочник цехов выдачи</button></li>
+                </ul>
+            </div>
             <button class="btn btn-outline-light" id="importDirectoryTemplateBtn">
                 <i class="bi bi-upload"></i>
                 Импорт
@@ -360,11 +371,48 @@
         let currentValuePage = 1;
         let selectedDirectoryId = null;
         let selectedDirectoryData = null;
+        let valueModalDirectory = null;
+        let valueModalStack = [];
         let schemaFields = [];
         let schemaFieldIndex = 0;
         const referenceDirectories = @json($referenceDirectories);
         const directoryRoutes = @json($directoryRoutes);
         const directoryCanModifyFilled = @json($directoryCanModifyFilled ?? true);
+        const directoryWizardPresets = {
+            warehouse_nomenclature: {
+                title: 'Складской справочник: номенклатура',
+                name: 'Номенклатура склада',
+                code: 'warehouse_nomenclature',
+                description: 'Номенклатура с номером, названием, параметрами и единицей измерения',
+                schema: [
+                    { label: 'Наименование', key: 'name', type: 'text', tab: 'Основное', required: true, unique: false },
+                    { label: 'Номенклатурный номер', key: 'item_number', type: 'text', tab: 'Основное', required: true, unique: true },
+                    { label: 'Параметры', key: 'parameters', type: 'text', tab: 'Основное', required: false, unique: false },
+                    { label: 'Единица измерения', key: 'unit', type: 'text', tab: 'Основное', required: true, unique: false }
+                ]
+            },
+            warehouse_sources: {
+                title: 'Складской справочник: источники поступления',
+                name: 'Источники поступления',
+                code: 'warehouse_sources',
+                description: 'Поставщики, возвраты и внутренние источники поступления',
+                schema: [
+                    { label: 'Наименование', key: 'name', type: 'text', tab: 'Основное', required: true, unique: false },
+                    { label: 'Номер источника', key: 'source_number', type: 'text', tab: 'Основное', required: true, unique: true },
+                    { label: 'Комментарий', key: 'comment', type: 'text', tab: 'Основное', required: false, unique: false }
+                ]
+            },
+            warehouse_workshops: {
+                title: 'Складской справочник: цеха выдачи',
+                name: 'Цеха для выдачи',
+                code: 'warehouse_workshops',
+                description: 'Цеха и участки, куда выдаётся номенклатура со склада',
+                schema: [
+                    { label: 'Наименование цеха', key: 'name', type: 'text', tab: 'Основное', required: true, unique: false },
+                    { label: 'Номер цеха', key: 'shop_number', type: 'text', tab: 'Основное', required: true, unique: true }
+                ]
+            }
+        };
         let directoryValuesCache = {};
 
         function directoryRoute(name, id = null) {
@@ -471,6 +519,30 @@
                     $(`.value-filter-field[data-key="${field.key}"]`).html(renderDirectoryFieldOptions(field, selectedValue));
                 }
             });
+        }
+
+        function upsertValueCache(directoryId, item) {
+            if (!item) {
+                return;
+            }
+
+            if (!directoryValuesCache[directoryId]) {
+                directoryValuesCache[directoryId] = [];
+            }
+
+            let index = directoryValuesCache[directoryId].findIndex(function (existingItem) {
+                return String(existingItem.id) === String(item.id);
+            });
+
+            if (index === -1) {
+                directoryValuesCache[directoryId].push(item);
+            } else {
+                directoryValuesCache[directoryId][index] = item;
+            }
+        }
+
+        function getValueModalDirectory() {
+            return valueModalDirectory || selectedDirectoryData;
         }
 
         function renderPagination(target, pagination, type) {
@@ -772,6 +844,33 @@
             renderSchemaFields();
         }
 
+        function applyDirectoryPreset(presetKey) {
+            let preset = directoryWizardPresets[presetKey];
+
+            if (!preset) {
+                return;
+            }
+
+            clearDirectoryForm();
+            $('#directoryModalTitle').text(preset.title || 'Создать справочник');
+            $('#directoryName').val(preset.name || '');
+            $('#directoryCode').val(preset.code || '');
+            $('#directoryDescription').val(preset.description || '');
+
+            schemaFields = [];
+            schemaFieldIndex = 0;
+
+            (preset.schema || []).forEach(function (field) {
+                addSchemaField(field);
+            });
+
+            if (!(preset.schema || []).length) {
+                renderSchemaFields();
+            }
+
+            directoryModal.show();
+        }
+
         function addSchemaField(data = null) {
             schemaFieldIndex++;
 
@@ -784,6 +883,7 @@
                 required: !!data?.required,
                 unique: !!data?.unique,
                 auto_generate: !!data?.auto_generate,
+                formula: data?.formula || '',
                 directory_id: data?.directory_id || '',
                 directory_display_field: data?.directory_display_field || '',
                 options: data?.options || []
@@ -838,6 +938,7 @@
                                         <option value="list" ${field.type === 'list' ? 'selected' : ''}>Список</option>
                                         <option value="qr" ${field.type === 'qr' ? 'selected' : ''}>QR/штрихкод</option>
                                         <option value="directory" ${field.type === 'directory' ? 'selected' : ''}>Справочник</option>
+                                        <option value="calc" ${field.type === 'calc' ? 'selected' : ''}>Р¤РѕСЂРјСѓР»Р°</option>
                                     </select>
                                 </div>
 
@@ -870,6 +971,12 @@
                                     <div class="form-text">Можно ввести вручную или оставить пустым для автоматического кода.</div>
                                 </div>
 
+                                <div class="col-md-12 schema-calc-block ${field.type === 'calc' ? '' : 'd-none'}">
+                                    <label class="form-label">Р¤РѕСЂРјСѓР»Р°</label>
+                                    <input type="text" class="form-control schema-formula" value="${escapeHtml(field.formula || '')}" placeholder="price * quantity">
+                                    <div class="form-text">РСЃРїРѕР»СЊР·СѓР№С‚Рµ РєР»СЋС‡Рё РґСЂСѓРіРёС… РїРѕР»РµР№ Рё РјР°С‚РµРјР°С‚РёРєСѓ: <code>price * quantity</code>, <code>(width + height) / 2</code>.</div>
+                                </div>
+
                                 <div class="col-md-6 schema-directory-block ${field.type === 'directory' ? '' : 'd-none'}">
                                     <label class="form-label">Справочник</label>
                                     <select class="form-select schema-directory">
@@ -890,6 +997,9 @@
             });
 
             $('#schemaBuilder').html(html);
+            $('#schemaBuilder .schema-type option[value="calc"]').text('Формула');
+            $('#schemaBuilder .schema-calc-block .form-label').text('Формула');
+            $('#schemaBuilder .schema-calc-block .form-text').html('Используйте ключи других полей и математику: <code>price * quantity</code>, <code>(width + height) / 2</code>.');
         }
 
         function syncSchemaFieldsFromDom() {
@@ -908,6 +1018,7 @@
                     required: card.find('.schema-required').is(':checked'),
                     unique: card.find('.schema-unique').is(':checked'),
                     auto_generate: card.find('.schema-auto-generate').is(':checked'),
+                    formula: (card.find('.schema-formula').val() || '').trim(),
                     directory_id: card.find('.schema-directory').val(),
                     directory_display_field: card.find('.schema-directory-display').val(),
                     options: optionsText
@@ -941,6 +1052,10 @@
                     item.auto_generate = !!field.auto_generate;
                 }
 
+                if (field.type === 'calc') {
+                    item.formula = field.formula || '';
+                }
+
                 if (field.type === 'directory') {
                     item.directory_id = field.directory_id;
                     item.directory_display_field = field.directory_display_field;
@@ -963,7 +1078,84 @@
             $('#valueId').val('');
             $('#valueSortOrder').val(0);
             $('#valueIsActive').prop('checked', true);
-            renderValueFields({}, selectedDirectoryData ? selectedDirectoryData.schema || [] : []);
+            let modalDirectory = getValueModalDirectory();
+            renderValueFields({}, modalDirectory ? modalDirectory.schema || [] : []);
+        }
+
+        function snapshotValueModalState() {
+            let payload = buildValuePayload();
+
+            return {
+                title: $('#valueModalTitle').text(),
+                valueId: $('#valueId').val(),
+                code: $('#valueCode').val(),
+                sortOrder: $('#valueSortOrder').val(),
+                isActive: $('#valueIsActive').is(':checked'),
+                payload: payload
+            };
+        }
+
+        function restoreValueModalState(snapshot, selectedValues = {}) {
+            let modalDirectory = getValueModalDirectory();
+            let data = snapshot.payload && snapshot.payload.data ? Object.assign({}, snapshot.payload.data) : {};
+
+            Object.keys(selectedValues).forEach(function (fieldKey) {
+                data[fieldKey] = selectedValues[fieldKey];
+            });
+
+            $('#valueModalTitle').text(snapshot.title || 'Добавить запись');
+            $('#valueId').val(snapshot.valueId || '');
+            $('#valueCode').val(snapshot.code || '');
+            $('#valueSortOrder').val(snapshot.sortOrder || 0);
+            $('#valueIsActive').prop('checked', snapshot.isActive !== false);
+
+            if (modalDirectory && modalDirectory.schema && modalDirectory.schema.length) {
+                renderValueFields(data, modalDirectory.schema);
+            } else {
+                renderValueFields({ value: snapshot.payload ? snapshot.payload.value || '' : '' }, []);
+            }
+        }
+
+        function openNestedAdminValueModal(fieldKey, directoryId) {
+            let modalDirectory = getValueModalDirectory();
+            let nestedDirectory = referenceDirectories.find(function (item) {
+                return String(item.id) === String(directoryId);
+            });
+
+            if (!modalDirectory || !nestedDirectory) {
+                return;
+            }
+
+            valueModalStack.push({
+                directory: modalDirectory,
+                returnFieldKey: fieldKey,
+                snapshot: snapshotValueModalState()
+            });
+
+            valueModalDirectory = nestedDirectory;
+            $('#valueId').val('');
+            $('#valueCode').val('');
+            $('#valueSortOrder').val(0);
+            $('#valueIsActive').prop('checked', true);
+            $('#valueModalTitle').text(`Добавить запись: ${nestedDirectory.name}`);
+            renderValueFields({}, nestedDirectory.schema || []);
+        }
+
+        function unwindNestedAdminValueModal(createdValue = null) {
+            let parentState = valueModalStack.pop();
+
+            if (!parentState) {
+                return;
+            }
+
+            valueModalDirectory = parentState.directory;
+
+            let selectedValues = {};
+            if (createdValue && parentState.returnFieldKey) {
+                selectedValues[parentState.returnFieldKey] = String(createdValue.id);
+            }
+
+            restoreValueModalState(parentState.snapshot, selectedValues);
         }
 
         function groupSchemaFieldsByTab(schema) {
@@ -1000,6 +1192,8 @@
                 html += `<input type="date" class="form-control value-data-field" data-key="${field.key}" value="${escapeHtml(value)}" ${required}>`;
             } else if (field.type === 'time') {
                 html += `<input type="time" class="form-control value-data-field" data-key="${field.key}" value="${escapeHtml(String(value || '').substring(0, 5))}" ${required}>`;
+            } else if (field.type === 'calc') {
+                html += `<input type="number" step="any" class="form-control value-data-field" data-key="${field.key}" value="${escapeHtml(value)}" readonly>`;
             } else if (field.type === 'qr') {
                 let qrRequired = field.auto_generate ? '' : required;
                 let placeholder = field.auto_generate ? 'Оставьте пустым для автогенерации' : 'Введите QR/штрихкод';
@@ -1010,9 +1204,22 @@
                     </div>
                 `;
             } else if (field.type === 'directory') {
-                html += `<select class="form-select value-data-field" data-key="${field.key}" ${required}>`;
-                html += renderDirectoryFieldOptions(field, value);
-                html += `</select>`;
+                html += `
+                    <div class="input-group">
+                        <select class="form-select value-data-field" data-key="${field.key}" ${required}>
+                            ${renderDirectoryFieldOptions(field, value)}
+                        </select>
+                        <button
+                            type="button"
+                            class="btn btn-outline-success open-nested-admin-value-modal"
+                            data-directory-id="${field.directory_id || ''}"
+                            data-field-key="${escapeHtml(field.key)}"
+                            title="Добавить значение в связанный справочник"
+                        >
+                            +
+                        </button>
+                    </div>
+                `;
                 loadDirectoryValuesForField(field, value);
             } else if (field.type === 'list') {
                 html += `<select class="form-select value-data-field" data-key="${field.key}" ${required}>`;
@@ -1083,7 +1290,8 @@
         }
 
         function buildValuePayload() {
-            let schema = selectedDirectoryData && selectedDirectoryData.schema ? selectedDirectoryData.schema : [];
+            let modalDirectory = getValueModalDirectory();
+            let schema = modalDirectory && modalDirectory.schema ? modalDirectory.schema : [];
             let payload = {
                 code: $('#valueCode').val(),
                 sort_order: $('#valueSortOrder').val(),
@@ -1136,6 +1344,10 @@
             directoryModal.show();
         });
 
+        $(document).on('click', '.directory-preset-btn', function () {
+            applyDirectoryPreset($(this).data('preset'));
+        });
+
         $('#addSchemaFieldBtn').on('click', function () {
             syncSchemaFieldsFromDom();
             addSchemaField();
@@ -1145,6 +1357,7 @@
             let card = $(this).closest('.schema-field-card');
             card.find('.schema-options-block').toggleClass('d-none', $(this).val() !== 'list');
             card.find('.schema-qr-block').toggleClass('d-none', $(this).val() !== 'qr');
+            card.find('.schema-calc-block').toggleClass('d-none', $(this).val() !== 'calc');
             card.find('.schema-directory-block').toggleClass('d-none', $(this).val() !== 'directory');
         });
 
@@ -1269,6 +1482,8 @@
                 return;
             }
 
+            valueModalDirectory = selectedDirectoryData;
+            valueModalStack = [];
             clearValueForm();
             $('#valueModalTitle').text('Добавить запись');
             valueModal.show();
@@ -1288,13 +1503,22 @@
             }
 
             let id = $('#valueId').val();
-            let url = id ? directoryRoute('value', id) : directoryRoute('directoryValues', selectedDirectoryId);
+            let modalDirectory = getValueModalDirectory();
+            let url = id ? directoryRoute('value', id) : directoryRoute('directoryValues', modalDirectory ? modalDirectory.id : selectedDirectoryId);
 
             $.ajax({
                 url: url,
                 method: 'POST',
                 data: buildValuePayload(),
                 success: function (response) {
+                    upsertValueCache(modalDirectory ? modalDirectory.id : selectedDirectoryId, response.value || null);
+
+                    if (!id && valueModalStack.length) {
+                        unwindNestedAdminValueModal(response.value || null);
+                        showToast(response.message, 'success');
+                        return;
+                    }
+
                     showToast(response.message, 'success');
                     valueModal.hide();
                     loadValues(currentValuePage);
@@ -1317,6 +1541,8 @@
 
                     $('#valueModalTitle').text('Редактировать запись');
                     $('#valueId').val(item.id);
+                    valueModalDirectory = selectedDirectoryData;
+                    valueModalStack = [];
                     $('#valueCode').val(item.code);
                     $('#valueSortOrder').val(item.sort_order);
                     $('#valueIsActive').prop('checked', item.is_active);
@@ -1333,6 +1559,31 @@
                     showAjaxErrors(xhr);
                 }
             });
+        });
+
+        $(document).on('click', '.open-nested-admin-value-modal', function () {
+            let directoryId = $(this).data('directory-id');
+            let fieldKey = $(this).data('field-key');
+
+            if (!directoryId || !fieldKey) {
+                return;
+            }
+
+            openNestedAdminValueModal(fieldKey, directoryId);
+        });
+
+        $(document).on('click', '#valueModal [data-bs-dismiss="modal"]', function (e) {
+            if (!valueModalStack.length) {
+                return;
+            }
+
+            e.preventDefault();
+            unwindNestedAdminValueModal();
+        });
+
+        $('#valueModal').on('hidden.bs.modal', function () {
+            valueModalDirectory = null;
+            valueModalStack = [];
         });
 
         $(document).on('click', '.delete-value', function () {

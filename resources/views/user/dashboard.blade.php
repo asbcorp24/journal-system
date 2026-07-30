@@ -43,7 +43,17 @@
                                     <i class="bi bi-journal-text fs-4"></i>
                                 </div>
 
-                                <span class="badge bg-success">Активен</span>
+                                <div class="d-flex align-items-center gap-2">
+                                    <button type="button"
+                                            class="btn btn-sm btn-outline-warning toggle-favorite-btn"
+                                            data-entity-type="journal"
+                                            data-entity-id="{{ $journal->id }}"
+                                            title="Избранное">
+                                        <i class="bi {{ !empty($journal->is_favorite) ? 'bi-star-fill' : 'bi-star' }}"></i>
+                                    </button>
+
+                                    <span class="badge bg-success">Активен</span>
+                                </div>
                             </div>
 
                             <h5 class="fw-bold">{{ $journal->name }}</h5>
@@ -78,3 +88,27 @@
     @endif
 
 @endsection
+
+@push('scripts')
+    <script>
+        $(document).on('click', '.toggle-favorite-btn', function () {
+            let button = $(this);
+
+            $.ajax({
+                url: "{{ route('user.favorites.toggle') }}",
+                method: 'POST',
+                data: {
+                    entity_type: button.data('entity-type'),
+                    entity_id: button.data('entity-id')
+                },
+                success: function (response) {
+                    showToast(response.message, 'success');
+                    window.location.reload();
+                },
+                error: function (xhr) {
+                    showAjaxErrors(xhr);
+                }
+            });
+        });
+    </script>
+@endpush

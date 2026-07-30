@@ -182,7 +182,7 @@
             <div class="modal-content">
                 <div class="modal-header">
                     <div>
-                        <h5 class="modal-title mb-1">Доступ к журналам</h5>
+                        <h5 class="modal-title mb-1">Персональные доступы</h5>
                         <div class="text-secondary small" id="permissionsUserTitle"></div>
                     </div>
 
@@ -194,6 +194,8 @@
 
                     <div class="card mb-4">
                         <div class="card-body">
+                            <h6 class="fw-bold mb-3">Доступ к журналам</h6>
+
                             <div class="row g-3">
                                 <div class="col-md-4">
                                     <label class="form-label">Подразделение</label>
@@ -233,7 +235,7 @@
 
                                 <div class="col-md-4 d-flex align-items-end">
                                     <button class="btn btn-primary w-100" id="saveUserPermissionBtn">
-                                        Добавить доступ
+                                        Добавить доступ к журналу
                                     </button>
                                 </div>
                             </div>
@@ -245,10 +247,54 @@
                         </div>
                     </div>
 
-                    <div class="card">
+                    <div class="card mb-4">
                         <div class="card-body">
-                            <div id="userPermissionsTable" class="text-center text-secondary py-4">
-                                Загрузка...
+                            <h6 class="fw-bold mb-3">Доступ к отчётам</h6>
+
+                            <div class="row g-3">
+                                <div class="col-md-8">
+                                    <label class="form-label">Отчёт</label>
+                                    <select id="permissionReportTemplateId" class="form-select">
+                                        <option value="">Выберите отчёт</option>
+                                        @foreach($reports as $report)
+                                            <option value="{{ $report->id }}">{{ $report->name }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
+
+                                <div class="col-md-4 d-flex align-items-end">
+                                    <button class="btn btn-outline-primary w-100" id="saveUserReportPermissionBtn">
+                                        Добавить доступ к отчёту
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="text-secondary small mt-3">
+                                Отчёты можно выдавать worker, foreman и admin персонально.
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row g-4">
+                        <div class="col-lg-7">
+                            <div class="card h-100">
+                                <div class="card-body">
+                                    <h6 class="fw-bold mb-3">Настроенные доступы к журналам</h6>
+                                    <div id="userPermissionsTable" class="text-center text-secondary py-4">
+                                        Загрузка...
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-lg-5">
+                            <div class="card h-100">
+                                <div class="card-body">
+                                    <h6 class="fw-bold mb-3">Настроенные доступы к отчётам</h6>
+                                    <div id="userReportPermissionsTable" class="text-center text-secondary py-4">
+                                        Загрузка...
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -265,6 +311,7 @@
         let userPermissionsModal = new bootstrap.Modal(document.getElementById('userPermissionsModal'));
         let currentPageUrl = "{{ route('admin.users.list') }}";
         const journals = @json($journalOptions);
+        const reports = @json($reports);
 
         function loadUsers(url = null) {
             if (!url) {
@@ -275,7 +322,7 @@
 
             $.ajax({
                 url: url,
-                method: "GET",
+                method: 'GET',
                 data: {
                     search: $('#searchInput').val(),
                     role: $('#roleFilter').val(),
@@ -361,6 +408,39 @@
             `);
         }
 
+        function renderUserReportPermissions(items) {
+            if (!items.length) {
+                $('#userReportPermissionsTable').html(`
+                    <div class="text-center text-secondary py-4">
+                        Для пользователя ещё не настроены персональные доступы к отчётам.
+                    </div>
+                `);
+                return;
+            }
+
+            let rows = items.map(function (item) {
+                let description = item.report_template && item.report_template.description
+                    ? `<div class="text-secondary small mt-1">${escapeHtml(item.report_template.description)}</div>`
+                    : '';
+
+                return `
+                    <div class="border rounded p-3 mb-2">
+                        <div class="d-flex justify-content-between align-items-start gap-3">
+                            <div>
+                                <div class="fw-semibold">${escapeHtml(item.report_template ? item.report_template.name : 'Отчёт')}</div>
+                                ${description}
+                            </div>
+                            <button class="btn btn-sm btn-outline-danger delete-user-report-permission" data-id="${item.id}">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            $('#userReportPermissionsTable').html(rows);
+        }
+
         function loadUserPermissions() {
             let userId = $('#permissionsUserId').val();
 
@@ -373,6 +453,25 @@
                 method: 'GET',
                 success: function (response) {
                     renderUserPermissions(response.permissions || []);
+                },
+                error: function (xhr) {
+                    showAjaxErrors(xhr);
+                }
+            });
+        }
+
+        function loadUserReportPermissions() {
+            let userId = $('#permissionsUserId').val();
+
+            if (!userId) {
+                return;
+            }
+
+            $.ajax({
+                url: `/admin/users/${userId}/report-permissions`,
+                method: 'GET',
+                success: function (response) {
+                    renderUserReportPermissions(response.permissions || []);
                 },
                 error: function (xhr) {
                     showAjaxErrors(xhr);
@@ -414,14 +513,11 @@
             e.preventDefault();
 
             let id = $('#userId').val();
-
-            let url = id
-                ? "/admin/users/" + id
-                : "{{ route('admin.users.store') }}";
+            let url = id ? '/admin/users/' + id : "{{ route('admin.users.store') }}";
 
             $.ajax({
                 url: url,
-                method: "POST",
+                method: 'POST',
                 data: $(this).serialize(),
                 success: function (response) {
                     showToast(response.message, 'success');
@@ -440,13 +536,12 @@
             clearForm();
 
             $.ajax({
-                url: "/admin/users/" + id,
-                method: "GET",
+                url: '/admin/users/' + id,
+                method: 'GET',
                 success: function (response) {
                     let user = response.user;
 
                     $('#userModalTitle').text('Редактировать пользователя');
-
                     $('#userId').val(user.id);
                     $('#name').val(user.name);
                     $('#email').val(user.email);
@@ -456,7 +551,6 @@
                     $('#can_edit_directory_templates').prop('checked', !!user.can_edit_directory_templates);
                     $('#can_edit_journal_templates').prop('checked', !!user.can_edit_journal_templates);
                     syncAdminDirectoryTemplatePermission();
-
                     $('#password').val('');
                     $('#passwordHint').text('(оставьте пустым, если не менять)');
 
@@ -476,8 +570,8 @@
             let id = $(this).data('id');
 
             $.ajax({
-                url: "/admin/users/" + id,
-                method: "DELETE",
+                url: '/admin/users/' + id,
+                method: 'DELETE',
                 success: function (response) {
                     showToast(response.message, 'success');
                     loadUsers(currentPageUrl);
@@ -527,11 +621,14 @@
             $('#permissionScope').val('division');
             $('#permissionAccessLevel').val('view');
             $('#permissionJournalTemplateId').val('');
+            $('#permissionReportTemplateId').val('');
             syncPermissionJournalState();
             $('#userPermissionsTable').html('<div class="text-center text-secondary py-4">Загрузка...</div>');
+            $('#userReportPermissionsTable').html('<div class="text-center text-secondary py-4">Загрузка...</div>');
 
             userPermissionsModal.show();
             loadUserPermissions();
+            loadUserReportPermissions();
         });
 
         $('#permissionScope, #permissionDivisionId').on('change', function () {
@@ -560,6 +657,26 @@
             });
         });
 
+        $('#saveUserReportPermissionBtn').on('click', function () {
+            let userId = $('#permissionsUserId').val();
+
+            $.ajax({
+                url: `/admin/users/${userId}/report-permissions`,
+                method: 'POST',
+                data: {
+                    report_template_id: $('#permissionReportTemplateId').val()
+                },
+                success: function (response) {
+                    showToast(response.message, 'success');
+                    $('#permissionReportTemplateId').val('');
+                    loadUserReportPermissions();
+                },
+                error: function (xhr) {
+                    showAjaxErrors(xhr);
+                }
+            });
+        });
+
         $(document).on('click', '.delete-user-permission', function () {
             if (!confirm('Удалить этот доступ?')) {
                 return;
@@ -574,6 +691,27 @@
                 success: function (response) {
                     showToast(response.message, 'success');
                     loadUserPermissions();
+                },
+                error: function (xhr) {
+                    showAjaxErrors(xhr);
+                }
+            });
+        });
+
+        $(document).on('click', '.delete-user-report-permission', function () {
+            if (!confirm('Удалить доступ к отчёту?')) {
+                return;
+            }
+
+            let userId = $('#permissionsUserId').val();
+            let permissionId = $(this).data('id');
+
+            $.ajax({
+                url: `/admin/users/${userId}/report-permissions/${permissionId}`,
+                method: 'DELETE',
+                success: function (response) {
+                    showToast(response.message, 'success');
+                    loadUserReportPermissions();
                 },
                 error: function (xhr) {
                     showAjaxErrors(xhr);

@@ -79,6 +79,26 @@
                                 Штрихкоды
                             </button>
 
+                            <button type="button" class="btn btn-outline-warning btn-sm" id="toggleDirectoryFavoriteBtn" disabled>
+                                <i class="bi bi-star"></i>
+                                Избранное
+                            </button>
+
+                            <button type="button" class="btn btn-outline-info btn-sm" id="exportDirectoryCsvBtn" disabled>
+                                CSV
+                            </button>
+
+                            <button type="button" class="btn btn-outline-info btn-sm" id="exportDirectoryXmlBtn" disabled>
+                                XML
+                            </button>
+
+                            @if(in_array(session('user_role'), ['foreman', 'admin']))
+                                <button type="button" class="btn btn-outline-success btn-sm" id="importDirectoryBtn" disabled>
+                                    <i class="bi bi-upload"></i>
+                                    Импорт
+                                </button>
+                            @endif
+
                             <input type="text"
                                    id="directoryValuesSearchInput"
                                    class="form-control"
@@ -173,6 +193,55 @@
                 </form>
             </div>
         </div>
+
+        <div class="modal fade" id="directoryImportModal" tabindex="-1">
+            <div class="modal-dialog">
+                <form class="modal-content" id="directoryImportForm" novalidate>
+                    <div class="modal-header">
+                        <h5 class="modal-title">Импорт значений справочника</h5>
+
+                        <button type="button"
+                                class="btn-close btn-close-white"
+                                data-bs-dismiss="modal"></button>
+                    </div>
+
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label class="form-label">Формат файла</label>
+                            <select class="form-select" id="directoryImportFormat">
+                                <option value="csv">CSV</option>
+                                <option value="xml">XML</option>
+                            </select>
+                        </div>
+
+                        <div class="mb-2">
+                            <label class="form-label">Файл</label>
+                            <input type="file"
+                                   class="form-control"
+                                   id="directoryImportFile"
+                                   name="import_file"
+                                   accept=".csv,.txt,.xml">
+                        </div>
+
+                        <div class="small text-secondary">
+                            Для CSV первая строка должна содержать заголовки: value, code, sort_order, is_active и ключи полей шаблона.
+                        </div>
+                    </div>
+
+                    <div class="modal-footer">
+                        <button type="button"
+                                class="btn btn-outline-light"
+                                data-bs-dismiss="modal">
+                            Отмена
+                        </button>
+
+                        <button type="submit" class="btn btn-primary">
+                            Загрузить
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
     @endif
 @endsection
 
@@ -183,11 +252,16 @@
         let directoryValueModal = canManageDirectoryValues
             ? new bootstrap.Modal(document.getElementById('directoryValueModal'))
             : null;
+        let directoryImportModal = canManageDirectoryValues
+            ? new bootstrap.Modal(document.getElementById('directoryImportModal'))
+            : null;
         let directories = @json($directories);
         let selectedDirectory = null;
         let currentDirectoryValues = [];
         let directoryValuesCache = {};
         let currentValuesPage = 1;
+        let directoryValueModalDirectory = null;
+        let directoryValueModalStack = [];
 
         function formatDateTime(value) {
             if (!value) {
@@ -252,6 +326,30 @@
             });
         }
 
+        function upsertDirectoryValueCache(directoryId, item) {
+            if (!directoryId || !item) {
+                return;
+            }
+
+            if (!directoryValuesCache[directoryId]) {
+                directoryValuesCache[directoryId] = [];
+            }
+
+            let index = directoryValuesCache[directoryId].findIndex(function (existing) {
+                return String(existing.id) === String(item.id);
+            });
+
+            if (index === -1) {
+                directoryValuesCache[directoryId].push(item);
+            } else {
+                directoryValuesCache[directoryId][index] = item;
+            }
+        }
+
+        function getDirectoryValueModalDirectory() {
+            return directoryValueModalDirectory || selectedDirectory;
+        }
+
         function renderDirectories(items) {
             if (!items || items.length === 0) {
                 $('#directoriesList').html(`
@@ -279,7 +377,12 @@
                     <button type="button"
                             class="btn btn-outline-light text-start directory-select-btn ${activeClass}"
                             data-id="${item.id}">
-                        <div class="fw-semibold">${escapeHtml(item.name)}</div>
+                        <div class="d-flex justify-content-between align-items-start gap-2">
+                            <div class="fw-semibold">${escapeHtml(item.name)}</div>
+                            <span class="text-warning">
+                                <i class="bi ${item.is_favorite ? 'bi-star-fill' : 'bi-star'}"></i>
+                            </span>
+                        </div>
                         <div class="small text-secondary">
                             ${item.description ? escapeHtml(item.description) : 'Без описания'}
                         </div>
@@ -294,11 +397,15 @@
             if (!selectedDirectory) {
                 $('#selectedDirectoryTitle').text('Выберите справочник');
                 $('#selectedDirectoryDescription').text('');
+                $('#toggleDirectoryFavoriteBtn').prop('disabled', true).html('<i class="bi bi-star"></i> Избранное');
                 return;
             }
 
             $('#selectedDirectoryTitle').text(selectedDirectory.name);
             $('#selectedDirectoryDescription').text(selectedDirectory.description || '');
+            $('#toggleDirectoryFavoriteBtn')
+                .prop('disabled', false)
+                .html(`<i class="bi ${selectedDirectory.is_favorite ? 'bi-star-fill' : 'bi-star'}"></i> ${selectedDirectory.is_favorite ? 'Убрать' : 'Избранное'}`);
         }
 
         function renderDirectoryValueFilters(schema) {
@@ -332,7 +439,7 @@
                     html += `<input type="date" class="form-control form-control-sm directory-value-filter" data-key="${key}">`;
                 } else if (field.type === 'time') {
                     html += `<input type="time" class="form-control form-control-sm directory-value-filter" data-key="${key}">`;
-                } else if (field.type === 'number') {
+                } else if (field.type === 'number' || field.type === 'calc') {
                     html += `<input type="number" step="any" class="form-control form-control-sm directory-value-filter" data-key="${key}" placeholder="Равно">`;
                 } else {
                     html += `<input type="text" class="form-control form-control-sm directory-value-filter" data-key="${key}" placeholder="Содержит">`;
@@ -359,6 +466,19 @@
             });
 
             return filters;
+        }
+
+        function buildDirectoryExportUrl(format) {
+            if (!selectedDirectory) {
+                return null;
+            }
+
+            let query = $.param({
+                search: $('#directoryValuesSearchInput').val() || '',
+                filters: collectDirectoryValueFilters()
+            });
+
+            return `/directories/${selectedDirectory.id}/export/${format}?${query}`;
         }
 
         function renderValuesTableHead(schema) {
@@ -455,10 +575,10 @@
         }
 
         function toggleAddButton() {
-            $('#printDirectoryBtn, #printDirectoryBarcodesBtn').prop('disabled', !selectedDirectory);
+            $('#printDirectoryBtn, #printDirectoryBarcodesBtn, #exportDirectoryCsvBtn, #exportDirectoryXmlBtn').prop('disabled', !selectedDirectory);
 
             if (canManageDirectoryValues) {
-                $('#addDirectoryValueBtn').prop('disabled', !selectedDirectory);
+                $('#addDirectoryValueBtn, #importDirectoryBtn').prop('disabled', !selectedDirectory);
             }
         }
 
@@ -594,6 +714,11 @@
             return tabs;
         }
 
+        function generateQrClientValue() {
+            return 'QR-' + new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14)
+                + '-' + Math.random().toString(36).slice(2, 8).toUpperCase();
+        }
+
         function renderDirectoryValueFieldControl(field, value = '') {
             let required = field.required ? 'required' : '';
             let requiredMark = field.required ? ' <span class="text-danger">*</span>' : '';
@@ -607,10 +732,15 @@
                 html += `<input type="date" class="form-control directory-value-field" data-key="${field.key}" value="${escapeHtml(value)}" ${required}>`;
             } else if (field.type === 'time') {
                 html += `<input type="time" class="form-control directory-value-field" data-key="${field.key}" value="${escapeHtml(String(value || '').substring(0, 5))}" ${required}>`;
+            } else if (field.type === 'calc') {
+                html += `<input type="number" step="any" class="form-control directory-value-field" data-key="${field.key}" value="${escapeHtml(value)}" readonly>`;
             } else if (field.type === 'directory') {
+                html += `<div class="input-group">`;
                 html += `<select class="form-select directory-value-field" data-key="${field.key}" ${required}>`;
                 html += renderDirectoryFieldOptions(field, value);
                 html += `</select>`;
+                html += `<button type="button" class="btn btn-outline-success open-nested-directory-value-modal" data-directory-id="${escapeHtml(field.directory_id || '')}" data-field-key="${escapeHtml(field.key)}" title="Добавить значение">+</button>`;
+                html += `</div>`;
                 loadDirectoryValuesForField(field, value);
             } else if (field.type === 'list') {
                 html += `<select class="form-select directory-value-field" data-key="${field.key}" ${required}>`;
@@ -622,6 +752,15 @@
                 });
 
                 html += `</select>`;
+            } else if (field.type === 'qr') {
+                let qrRequired = field.auto_generate ? '' : required;
+                let placeholder = field.auto_generate ? 'Оставьте пустым для автогенерации' : 'Введите QR/штрихкод';
+                html += `
+                    <div class="input-group">
+                        <input type="text" class="form-control directory-value-field" data-key="${field.key}" value="${escapeHtml(value)}" placeholder="${placeholder}" ${qrRequired}>
+                        <button type="button" class="btn btn-outline-info generate-directory-qr-value">Сгенерировать</button>
+                    </div>
+                `;
             } else {
                 html += `<input type="text" class="form-control directory-value-field" data-key="${field.key}" value="${escapeHtml(value)}" ${required}>`;
             }
@@ -632,12 +771,14 @@
         }
 
         function renderDirectoryValueForm() {
-            if (!selectedDirectory) {
+            let modalDirectory = getDirectoryValueModalDirectory();
+
+            if (!modalDirectory) {
                 $('#directoryValueDynamicFields').html('');
                 return;
             }
 
-            let schema = selectedDirectory.schema || [];
+            let schema = modalDirectory.schema || [];
 
             if (!schema.length) {
                 $('#directoryValueDynamicFields').html(`
@@ -688,6 +829,7 @@
         }
 
         function fillDirectoryValueForm(item = null) {
+            let modalDirectory = getDirectoryValueModalDirectory();
             $('#directoryValueId').val(item ? item.id : '');
             $('#directoryValueCode').val(item ? (item.code || '') : '');
             $('#directoryValueSortOrder').val(item ? (item.sort_order ?? 0) : 0);
@@ -698,7 +840,7 @@
                 return;
             }
 
-            let schema = selectedDirectory ? (selectedDirectory.schema || []) : [];
+            let schema = modalDirectory ? (modalDirectory.schema || []) : [];
 
             if (!schema.length) {
                 $('.directory-value-field[data-key="value"]').val(item.value || '');
@@ -723,12 +865,13 @@
         }
 
         function collectDirectoryValuePayload() {
+            let modalDirectory = getDirectoryValueModalDirectory();
             let payload = {
                 code: $('#directoryValueCode').val(),
                 sort_order: $('#directoryValueSortOrder').val() || 0
             };
 
-            let schema = selectedDirectory ? (selectedDirectory.schema || []) : [];
+            let schema = modalDirectory ? (modalDirectory.schema || []) : [];
 
             if (!schema.length) {
                 payload.value = $('.directory-value-field[data-key="value"]').val() || '';
@@ -742,6 +885,85 @@
             });
 
             return payload;
+        }
+
+        function snapshotDirectoryValueModalState() {
+            return {
+                directory: getDirectoryValueModalDirectory(),
+                valueId: $('#directoryValueId').val(),
+                title: $('#directoryValueModalTitle').text(),
+                submitText: $('#directoryValueSubmitText').text(),
+                payload: collectDirectoryValuePayload()
+            };
+        }
+
+        function restoreDirectoryValueModalState(snapshot, selectedValues = {}) {
+            if (!snapshot || !snapshot.directory) {
+                return;
+            }
+
+            directoryValueModalDirectory = snapshot.directory;
+            $('#directoryValueModalTitle').text(snapshot.title || `Добавить значение: ${snapshot.directory.name}`);
+            $('#directoryValueSubmitText').text(snapshot.submitText || 'Сохранить');
+            $('#directoryValueId').val(snapshot.valueId || '');
+            $('#directoryValueCode').val(snapshot.payload?.code || '');
+            $('#directoryValueSortOrder').val(snapshot.payload?.sort_order ?? 0);
+
+            renderDirectoryValueForm();
+
+            if (snapshot.payload?.data) {
+                Object.keys(snapshot.payload.data).forEach(function (key) {
+                    $(`.directory-value-field[data-key="${key}"]`).val(snapshot.payload.data[key]);
+                });
+            } else if (snapshot.payload?.value !== undefined) {
+                $('.directory-value-field[data-key="value"]').val(snapshot.payload.value || '');
+            }
+
+            Object.keys(selectedValues).forEach(function (key) {
+                $(`.directory-value-field[data-key="${key}"]`).val(selectedValues[key]).trigger('change');
+            });
+
+            initSearchableSelects(document.getElementById('directoryValueDynamicFields'));
+        }
+
+        function openNestedDirectoryValueModal(fieldKey, directoryId) {
+            let directory = findDirectoryDefinition(directoryId);
+
+            if (!directory) {
+                showToast('Вложенный справочник не найден', 'warning');
+                return;
+            }
+
+            directoryValueModalStack.push({
+                returnFieldKey: fieldKey,
+                snapshot: snapshotDirectoryValueModalState()
+            });
+
+            directoryValueModalDirectory = directory;
+            $('#directoryValueForm')[0].reset();
+            $('#directoryValueId').val('');
+            $('#directoryValueCode').val('');
+            $('#directoryValueSortOrder').val(0);
+            $('#directoryValueModalTitle').text(`Добавить значение: ${directory.name}`);
+            $('#directoryValueSubmitText').text('Сохранить и выбрать');
+            renderDirectoryValueForm();
+            directoryValueModal.show();
+        }
+
+        function unwindNestedDirectoryValueModal(createdValue = null) {
+            if (!directoryValueModalStack.length) {
+                return false;
+            }
+
+            let context = directoryValueModalStack.pop();
+            let selectedValues = {};
+
+            if (createdValue && context.returnFieldKey) {
+                selectedValues[context.returnFieldKey] = createdValue.id;
+            }
+
+            restoreDirectoryValueModalState(context.snapshot, selectedValues);
+            return true;
         }
 
         $(document).on('click', '.directory-select-btn', function () {
@@ -811,12 +1033,39 @@
             window.open(`/directories/${selectedDirectory.id}/barcodes`, '_blank');
         });
 
+        $('#exportDirectoryCsvBtn').on('click', function () {
+            let url = buildDirectoryExportUrl('csv');
+
+            if (url) {
+                window.open(url, '_blank');
+            }
+        });
+
+        $('#exportDirectoryXmlBtn').on('click', function () {
+            let url = buildDirectoryExportUrl('xml');
+
+            if (url) {
+                window.open(url, '_blank');
+            }
+        });
+
         if (canManageDirectoryValues) {
+            $('#importDirectoryBtn').on('click', function () {
+                if (!selectedDirectory) {
+                    return;
+                }
+
+                $('#directoryImportForm')[0].reset();
+                directoryImportModal.show();
+            });
+
             $('#addDirectoryValueBtn').on('click', function () {
                 if (!selectedDirectory) {
                     return;
                 }
 
+                directoryValueModalDirectory = selectedDirectory;
+                directoryValueModalStack = [];
                 $('#directoryValueModalTitle').text(`Добавить значение: ${selectedDirectory.name}`);
                 $('#directoryValueSubmitText').text('Сохранить');
                 $('#directoryValueForm')[0].reset();
@@ -834,6 +1083,8 @@
                     return;
                 }
 
+                directoryValueModalDirectory = selectedDirectory;
+                directoryValueModalStack = [];
                 $('#directoryValueModalTitle').text(`Редактировать значение: ${selectedDirectory.name}`);
                 $('#directoryValueSubmitText').text('Сохранить изменения');
                 $('#directoryValueForm')[0].reset();
@@ -841,10 +1092,30 @@
                 directoryValueModal.show();
             });
 
+            $(document).on('click', '.open-nested-directory-value-modal', function () {
+                openNestedDirectoryValueModal($(this).data('field-key'), $(this).data('directory-id'));
+            });
+
+            $(document).on('click', '#directoryValueModal [data-bs-dismiss="modal"]', function (e) {
+                if (!directoryValueModalStack.length) {
+                    return;
+                }
+
+                e.preventDefault();
+                unwindNestedDirectoryValueModal();
+            });
+
+            $('#directoryValueModal').on('hidden.bs.modal', function () {
+                directoryValueModalDirectory = null;
+                directoryValueModalStack = [];
+            });
+
             $('#directoryValueForm').on('submit', function (e) {
                 e.preventDefault();
 
-                if (!selectedDirectory) {
+                let modalDirectory = getDirectoryValueModalDirectory();
+
+                if (!modalDirectory) {
                     return;
                 }
 
@@ -853,13 +1124,55 @@
                 $.ajax({
                     url: valueId
                         ? `/directory-values/${valueId}`
-                        : `/directories/${selectedDirectory.id}/values`,
+                        : `/directories/${modalDirectory.id}/values`,
                     method: "POST",
                     data: collectDirectoryValuePayload(),
                     success: function (response) {
+                        upsertDirectoryValueCache(modalDirectory.id, response.value || null);
                         showToast(response.message, 'success');
+
+                        if (unwindNestedDirectoryValueModal(response.value || null)) {
+                            return;
+                        }
+
                         directoryValueModal.hide();
+                        directoryValueModalDirectory = null;
                         loadValues();
+                    },
+                    error: function (xhr) {
+                        showAjaxErrors(xhr);
+                    }
+                });
+            });
+
+            $('#directoryImportForm').on('submit', function (e) {
+                e.preventDefault();
+
+                if (!selectedDirectory) {
+                    return;
+                }
+
+                let fileInput = document.getElementById('directoryImportFile');
+                let format = $('#directoryImportFormat').val() || 'csv';
+
+                if (!fileInput.files.length) {
+                    showToast('Выберите файл для импорта', 'danger');
+                    return;
+                }
+
+                let formData = new FormData();
+                formData.append('import_file', fileInput.files[0]);
+
+                $.ajax({
+                    url: `/directories/${selectedDirectory.id}/import/${format}`,
+                    method: 'POST',
+                    data: formData,
+                    processData: false,
+                    contentType: false,
+                    success: function (response) {
+                        showToast(response.message, 'success');
+                        directoryImportModal.hide();
+                        loadValues(1);
                     },
                     error: function (xhr) {
                         showAjaxErrors(xhr);
@@ -889,6 +1202,32 @@
                 });
             });
         }
+
+        $(document).on('click', '.generate-directory-qr-value', function () {
+            $(this).closest('.input-group').find('.directory-value-field').val(generateQrClientValue()).trigger('input');
+        });
+
+        $('#toggleDirectoryFavoriteBtn').on('click', function () {
+            if (!selectedDirectory) {
+                return;
+            }
+
+            $.ajax({
+                url: "{{ route('user.favorites.toggle') }}",
+                method: 'POST',
+                data: {
+                    entity_type: 'directory',
+                    entity_id: selectedDirectory.id
+                },
+                success: function (response) {
+                    showToast(response.message, 'success');
+                    loadDirectories();
+                },
+                error: function (xhr) {
+                    showAjaxErrors(xhr);
+                }
+            });
+        });
 
         loadDirectories();
     </script>

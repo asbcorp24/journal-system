@@ -48,4 +48,24 @@ class User extends Authenticatable
     {
         return $this->hasMany(UserJournalPermission::class);
     }
+
+    public function reportPermissions()
+    {
+        return $this->hasMany(UserReportPermission::class);
+    }
+
+    public function favorites()
+    {
+        return $this->hasMany(UserFavorite::class);
+    }
+
+    public function sentChatMessages()
+    {
+        return $this->hasMany(ChatMessage::class, 'sender_id');
+    }
+
+    public function receivedChatMessages()
+    {
+        return $this->hasMany(ChatMessage::class, 'recipient_id');
+    }
 }

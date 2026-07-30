@@ -27,6 +27,20 @@
                 <i class="bi bi-arrows-fullscreen"></i>
                 На весь экран
             </button>
+            <button class="btn btn-outline-success" id="exportCsvBtn">
+                <i class="bi bi-filetype-csv"></i>
+                CSV
+            </button>
+            <button class="btn btn-outline-success" id="exportXmlBtn">
+                <i class="bi bi-filetype-xml"></i>
+                XML
+            </button>
+            @if($canManageJournal)
+                <button class="btn btn-outline-light" id="importJournalBtn">
+                    <i class="bi bi-upload"></i>
+                    Импорт
+                </button>
+            @endif
             <button class="btn btn-outline-light" id="printJournalBtn">
                 <i class="bi bi-printer"></i>
                 Печать
@@ -142,6 +156,43 @@
         </div>
     </div>
 
+    @if($canManageJournal)
+        <div class="modal fade" id="journalImportModal" tabindex="-1">
+            <div class="modal-dialog">
+                <form class="modal-content" id="journalImportForm" enctype="multipart/form-data">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Импорт записей журнала</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <label class="form-label">Формат файла</label>
+                        <select class="form-select mb-3" id="journalImportFormat">
+                            <option value="csv">CSV</option>
+                            <option value="xml">XML</option>
+                        </select>
+
+                        <label class="form-label">Файл</label>
+                        <input type="file"
+                               class="form-control"
+                               id="journalImportFile"
+                               name="import_file"
+                               accept=".csv,.xml,.txt"
+                               required>
+
+                        <div class="text-secondary small mt-2">
+                            Подойдут файлы, экспортированные из этого журнала. Если в файле нет подразделения или оно недоступно,
+                            система возьмёт подразделение по умолчанию для записи.
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Отмена</button>
+                        <button type="submit" class="btn btn-primary">Импортировать</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    @endif
+
     <div class="card">
         <div class="card-body">
             <div class="table-responsive">
@@ -190,6 +241,7 @@
 
                 <div class="modal-body">
                     <input type="hidden" id="entryId">
+                    <input type="hidden" id="entryCloseAfterSave" value="0">
 
                     @if($showEntryDivisionSelector)
                         <div class="mb-3">
@@ -222,7 +274,11 @@
                         Отмена
                     </button>
 
-                    <button type="submit" class="btn btn-primary">
+                    <button type="submit" class="btn btn-outline-info" data-close-after-save="0">
+                        Сохранить
+                    </button>
+
+                    <button type="submit" class="btn btn-primary" data-close-after-save="1">
                         Сохранить запись
                     </button>
                 </div>
@@ -230,10 +286,10 @@
         </div>
     </div>
     <div class="modal fade" id="directoryValueModal" tabindex="-1">
-        <div class="modal-dialog">
-            <form class="modal-content" id="directoryValueForm">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <form class="modal-content" id="directoryValueForm" novalidate>
                 <div class="modal-header">
-                    <h5 class="modal-title" id="directoryValueModalTitle">Add value</h5>
+                    <h5 class="modal-title" id="directoryValueModalTitle">Добавить значение</h5>
 
                     <button type="button"
                             class="btn-close btn-close-white"
@@ -243,6 +299,16 @@
                 <div class="modal-body">
                     <input type="hidden" id="directoryValueFieldKey">
                     <input type="hidden" id="directoryValueDirectoryId">
+                    <div class="mb-3">
+                        <label class="form-label">Код</label>
+                        <input type="text" class="form-control" id="directoryValueCode">
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Порядок сортировки</label>
+                        <input type="number" class="form-control" id="directoryValueSortOrder" min="0" value="0">
+                    </div>
+
                     <div id="directoryValueFields"></div>
                 </div>
 
@@ -250,11 +316,11 @@
                     <button type="button"
                             class="btn btn-outline-light"
                             data-bs-dismiss="modal">
-                        Cancel
+                        Отмена
                     </button>
 
                     <button type="submit" class="btn btn-primary">
-                        Save
+                        Сохранить
                     </button>
                 </div>
             </form>
@@ -403,7 +469,12 @@
 
         let entryModal = new bootstrap.Modal(document.getElementById('entryModal'));
         let printTemplateModal = new bootstrap.Modal(document.getElementById('printTemplateModal'));
+        @if($canManageJournal)
+        let journalImportModal = new bootstrap.Modal(document.getElementById('journalImportModal'));
+        @endif
         let directoryValueModal = new bootstrap.Modal(document.getElementById('directoryValueModal'));
+        let journalDirectoryValueModalDirectory = null;
+        let journalDirectoryValueModalStack = [];
         let currentPage = 1;
         let journalFullscreen = false;
         let entryModalFullscreen = false;
@@ -519,6 +590,34 @@
             return item ? getDirectoryOptionLabel(field, item) : valueId;
         }
 
+        function renderDirectoryFieldOptions(field, selectedValue) {
+            let html = '<option value="">Выберите значение</option>';
+            let values = directoryValues[field.directory_id] || [];
+
+            values.forEach(function (item) {
+                let selected = String(selectedValue || '') === String(item.id) ? 'selected' : '';
+                html += `<option value="${item.id}" ${selected}>${escapeHtml(getDirectoryOptionLabel(field, item))}</option>`;
+            });
+
+            return html;
+        }
+
+        function loadDirectoryValuesForField(field, selectedValue) {
+            if (!field.directory_id || directoryValues[field.directory_id]) {
+                return;
+            }
+
+            $.ajax({
+                url: `/directories/${field.directory_id}/values`,
+                method: 'GET',
+                data: { all: 1 },
+                success: function (response) {
+                    directoryValues[field.directory_id] = response.items || [];
+                    $(`.directory-value-field[data-key="${field.key}"]`).html(renderDirectoryFieldOptions(field, selectedValue));
+                }
+            });
+        }
+
         function upsertDirectoryValue(directoryId, item) {
             if (!directoryValues[directoryId]) {
                 directoryValues[directoryId] = [];
@@ -548,6 +647,85 @@
 
         function getDirectoryDefinition(directoryId) {
             return directoryDefinitions[directoryId] || null;
+        }
+
+        function getJournalDirectoryValueModalDirectory() {
+            let directoryId = $('#directoryValueDirectoryId').val();
+
+            return journalDirectoryValueModalDirectory || getDirectoryDefinition(directoryId);
+        }
+
+        function snapshotJournalDirectoryValueModalState() {
+            let modalDirectory = getJournalDirectoryValueModalDirectory();
+
+            return {
+                title: $('#directoryValueModalTitle').text(),
+                fieldKey: $('#directoryValueFieldKey').val(),
+                directoryId: $('#directoryValueDirectoryId').val(),
+                code: $('#directoryValueCode').val(),
+                sortOrder: $('#directoryValueSortOrder').val(),
+                payload: collectDirectoryValueData(modalDirectory ? modalDirectory.id : $('#directoryValueDirectoryId').val())
+            };
+        }
+
+        function restoreJournalDirectoryValueModalState(snapshot, selectedValues = {}) {
+            let data = snapshot.payload && snapshot.payload.data ? Object.assign({}, snapshot.payload.data) : {};
+
+            Object.keys(selectedValues).forEach(function (fieldKey) {
+                data[fieldKey] = selectedValues[fieldKey];
+            });
+
+            $('#directoryValueFieldKey').val(snapshot.fieldKey || '');
+            $('#directoryValueDirectoryId').val(snapshot.directoryId || '');
+            $('#directoryValueCode').val(snapshot.code || '');
+            $('#directoryValueSortOrder').val(snapshot.sortOrder || 0);
+            $('#directoryValueModalTitle').text(snapshot.title || 'Добавить значение');
+
+            if (snapshot.payload && Object.prototype.hasOwnProperty.call(snapshot.payload, 'value')) {
+                renderDirectoryValueModalForm(snapshot.directoryId, { value: snapshot.payload.value || '' });
+                return;
+            }
+
+            renderDirectoryValueModalForm(snapshot.directoryId, data);
+        }
+
+        function openNestedJournalDirectoryValueModal(fieldKey, directoryId) {
+            let modalDirectory = getJournalDirectoryValueModalDirectory();
+            let nestedDirectory = getDirectoryDefinition(directoryId);
+
+            if (!modalDirectory || !nestedDirectory) {
+                return;
+            }
+
+            journalDirectoryValueModalStack.push({
+                directory: modalDirectory,
+                returnFieldKey: fieldKey,
+                snapshot: snapshotJournalDirectoryValueModalState()
+            });
+
+            journalDirectoryValueModalDirectory = nestedDirectory;
+            $('#directoryValueDirectoryId').val(directoryId);
+            $('#directoryValueCode').val('');
+            $('#directoryValueSortOrder').val(0);
+            $('#directoryValueModalTitle').text(`Добавить значение: ${nestedDirectory.name}`);
+            renderDirectoryValueModalForm(directoryId);
+        }
+
+        function unwindNestedJournalDirectoryValueModal(createdValue = null) {
+            let parentState = journalDirectoryValueModalStack.pop();
+
+            if (!parentState) {
+                return;
+            }
+
+            journalDirectoryValueModalDirectory = parentState.directory;
+
+            let selectedValues = {};
+            if (createdValue && parentState.returnFieldKey) {
+                selectedValues[parentState.returnFieldKey] = String(createdValue.id);
+            }
+
+            restoreJournalDirectoryValueModalState(parentState.snapshot, selectedValues);
         }
 
         function getDirectoryQrKey(field) {
@@ -660,6 +838,178 @@
             });
 
             return { data };
+        }
+
+        function groupDirectorySchemaFieldsByTab(schema) {
+            let tabs = [];
+            let indexes = {};
+
+            schema.forEach(function (field) {
+                let tabName = (field.tab || '').trim() || 'Основное';
+
+                if (indexes[tabName] === undefined) {
+                    indexes[tabName] = tabs.length;
+                    tabs.push({
+                        name: tabName,
+                        fields: []
+                    });
+                }
+
+                tabs[indexes[tabName]].fields.push(field);
+            });
+
+            return tabs;
+        }
+
+        function renderDirectoryValueModalFieldControl(field, value = '') {
+            let required = field.required ? 'required' : '';
+            let requiredMark = field.required ? '<span class="text-danger">*</span>' : '';
+            let html = `<div class="mb-3">`;
+
+            html += `<label class="form-label">${escapeHtml(field.label)} ${requiredMark}</label>`;
+
+            if (field.type === 'number') {
+                html += `<input type="number" step="any" class="form-control directory-value-field" data-key="${field.key}" value="${escapeHtml(value)}" ${required}>`;
+            } else if (field.type === 'date') {
+                html += `<input type="date" class="form-control directory-value-field" data-key="${field.key}" value="${escapeHtml(value)}" ${required}>`;
+            } else if (field.type === 'time') {
+                html += `<input type="time" class="form-control directory-value-field" data-key="${field.key}" value="${escapeHtml(String(value || '').substring(0, 5))}" ${required}>`;
+            } else if (field.type === 'calc') {
+                html += `<input type="number" step="any" class="form-control directory-value-field" data-key="${field.key}" value="${escapeHtml(value)}" readonly>`;
+            } else if (field.type === 'directory') {
+                html += `
+                    <div class="input-group">
+                        <select class="form-select directory-value-field" data-key="${field.key}" ${required}>
+                            ${renderDirectoryFieldOptions(field, value)}
+                        </select>
+                        <button
+                            type="button"
+                            class="btn btn-outline-success open-nested-journal-directory-value-modal"
+                            data-directory-id="${field.directory_id || ''}"
+                            data-field-key="${escapeHtml(field.key)}"
+                            title="Добавить значение в связанный справочник"
+                        >
+                            +
+                        </button>
+                    </div>
+                `;
+            } else if (field.type === 'list') {
+                html += `<select class="form-select directory-value-field" data-key="${field.key}" ${required}>`;
+                html += `<option value="">Выберите значение</option>`;
+
+                (field.options || []).forEach(function (option) {
+                    let selected = String(value) === String(option) ? 'selected' : '';
+                    html += `<option value="${escapeHtml(option)}" ${selected}>${escapeHtml(option)}</option>`;
+                });
+
+                html += `</select>`;
+            } else if (field.type === 'qr') {
+                let qrRequired = field.auto_generate ? '' : required;
+                let placeholder = field.auto_generate ? 'Оставьте пустым для автогенерации' : 'Введите QR/штрихкод';
+                html += `
+                    <div class="input-group">
+                        <input type="text" class="form-control directory-value-field" data-key="${field.key}" value="${escapeHtml(value)}" placeholder="${placeholder}" ${qrRequired}>
+                        <button type="button" class="btn btn-outline-info generate-directory-qr-value">Сгенерировать</button>
+                    </div>
+                `;
+            } else {
+                html += `<input type="text" class="form-control directory-value-field" data-key="${field.key}" value="${escapeHtml(value)}" ${required}>`;
+            }
+
+            html += `</div>`;
+
+            return html;
+        }
+
+        function renderDirectoryValueModalForm(directoryId, data = {}) {
+            let directory = getDirectoryDefinition(directoryId);
+            let schema = directory && Array.isArray(directory.schema) ? directory.schema : [];
+            let html = '';
+
+            if (!schema.length) {
+                html = `
+                    <label class="form-label" for="directoryValueInput">Значение</label>
+                    <input type="text"
+                           class="form-control"
+                           id="directoryValueInput"
+                           maxlength="255"
+                           value="${escapeHtml(data.value || '')}"
+                           required>
+                `;
+
+                $('#directoryValueFields').html(html);
+                return;
+            }
+
+            let tabs = groupDirectorySchemaFieldsByTab(schema);
+
+            if (tabs.length > 1 || (tabs[0] && tabs[0].name !== 'Основное')) {
+                html += '<ul class="nav nav-tabs mb-3" role="tablist">';
+
+                tabs.forEach(function (tab, index) {
+                    let active = index === 0 ? 'active' : '';
+                    html += `
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link ${active}" type="button" data-bs-toggle="tab" data-bs-target="#journal-directory-value-tab-${index}" role="tab">
+                                ${escapeHtml(tab.name)}
+                            </button>
+                        </li>
+                    `;
+                });
+
+                html += '</ul>';
+                html += '<div class="tab-content">';
+
+                tabs.forEach(function (tab, index) {
+                    let active = index === 0 ? 'show active' : '';
+                    html += `<div class="tab-pane fade ${active}" id="journal-directory-value-tab-${index}" role="tabpanel">`;
+
+                    tab.fields.forEach(function (field) {
+                        html += renderDirectoryValueModalFieldControl(field, data[field.key] ?? '');
+                    });
+
+                    html += '</div>';
+                });
+
+                html += '</div>';
+            } else {
+                schema.forEach(function (field) {
+                    html += renderDirectoryValueModalFieldControl(field, data[field.key] ?? '');
+                });
+            }
+
+            $('#directoryValueFields').html(html);
+            initSearchableSelects(document.getElementById('directoryValueFields'));
+
+            schema.forEach(function (field) {
+                if (field.type === 'directory') {
+                    loadDirectoryValuesForField(field, data[field.key] ?? '');
+                }
+            });
+        }
+
+        function collectDirectoryValueData(directoryId) {
+            let directory = getDirectoryDefinition(directoryId);
+            let schema = directory && Array.isArray(directory.schema) ? directory.schema : [];
+            let payload = {
+                code: $('#directoryValueCode').val(),
+                sort_order: $('#directoryValueSortOrder').val() || 0
+            };
+
+            if (!schema.length) {
+                payload.value = ($('#directoryValueInput').val() || '').trim();
+                return payload;
+            }
+
+            let data = {};
+
+            $('.directory-value-field').each(function () {
+                data[$(this).data('key')] = $(this).val();
+            });
+
+            payload.data = data;
+
+            return payload;
         }
 
         function formatValue(field, value) {
@@ -871,8 +1221,8 @@
 
             if (!items || items.length === 0) {
                 $('#entriesTableBody').html(`
-                <tr class="${entry.deleted_at ? 'table-danger' : ''}">
-                    <td colspan="${schema.length + 6}" class="text-center text-secondary py-5">
+                <tr>
+                    <td colspan="${schema.length + 7}" class="text-center text-secondary py-5">
                         Записи не найдены
                     </td>
                 </tr>
@@ -1267,6 +1617,7 @@
 
         function clearEntryForm(useDefaultValues = false) {
             $('#entryId').val('');
+            $('#entryCloseAfterSave').val('0');
 
             if ($('#entryDivisionId').length) {
                 $('#entryDivisionId').val('');
@@ -1286,6 +1637,12 @@
 
             $('#entryForm button[type="submit"]').toggleClass('d-none', readonly);
         }
+
+        $('#entryForm').on('click', 'button[type="submit"]', function () {
+            $('#entryCloseAfterSave').val($(this).data('close-after-save') ? '1' : '0');
+        });
+
+        $('#entryForm button[data-close-after-save="1"]').text('Сохранить и закрыть');
 
         $('#addEntryBtn').on('click', function () {
             clearEntryForm(true);
@@ -1312,13 +1669,21 @@
                 payload.division_id = $('#entryDivisionId').val();
             }
 
+            let closeAfterSave = $('#entryCloseAfterSave').val() === '1';
+
             $.ajax({
                 url: url,
                 method: "POST",
                 data: payload,
                 success: function (response) {
                     showToast(response.message, 'success');
-                    entryModal.hide();
+                    if (response.entry && response.entry.id) {
+                        $('#entryId').val(response.entry.id);
+                    }
+
+                    if (closeAfterSave) {
+                        entryModal.hide();
+                    }
                     loadEntries(currentPage);
                 },
                 error: function (xhr) {
@@ -1406,14 +1771,30 @@
         $(document).on('click', '.add-directory-value-btn', function () {
             let directoryId = String($(this).data('directory-id'));
 
+            journalDirectoryValueModalDirectory = getDirectoryDefinition(directoryId);
+            journalDirectoryValueModalStack = [];
             $('#directoryValueFieldKey').val($(this).data('field-key'));
             $('#directoryValueDirectoryId').val(directoryId);
+            $('#directoryValueForm')[0].reset();
+            $('#directoryValueCode').val('');
+            $('#directoryValueSortOrder').val(0);
 
-            let fieldLabel = $(this).data('field-label') || 'field';
-            $('#directoryValueModalTitle').text(`Add value: ${fieldLabel}`);
+            let fieldLabel = $(this).data('field-label') || 'поле';
+            $('#directoryValueModalTitle').text(`Добавить значение: ${fieldLabel}`);
             renderDirectoryValueModalForm(directoryId);
 
             directoryValueModal.show();
+        });
+
+        $(document).on('click', '.open-nested-journal-directory-value-modal', function () {
+            let directoryId = String($(this).data('directory-id') || '');
+            let fieldKey = $(this).data('field-key');
+
+            if (!directoryId || !fieldKey) {
+                return;
+            }
+
+            openNestedJournalDirectoryValueModal(fieldKey, directoryId);
         });
 
         $(document).on('click', '.generate-directory-qr-value', function () {
@@ -1465,7 +1846,7 @@
             let fieldKey = $('#directoryValueFieldKey').val();
             let directoryId = $('#directoryValueDirectoryId').val();
             if (!fieldKey || !directoryId) {
-                showToast('Directory is not selected', 'danger');
+                showToast('Справочник не выбран', 'danger');
                 return;
             }
 
@@ -1475,6 +1856,12 @@
                 data: collectDirectoryValueData(directoryId),
                 success: function (response) {
                     upsertDirectoryValue(directoryId, response.value);
+
+                    if (journalDirectoryValueModalStack.length) {
+                        unwindNestedJournalDirectoryValueModal(response.value);
+                        showToast(response.message, 'success');
+                        return;
+                    }
 
                     let select = $(`.journal-field[data-key="${fieldKey}"]`);
 
@@ -1509,6 +1896,20 @@
                     showAjaxErrors(xhr);
                 }
             });
+        });
+
+        $(document).on('click', '#directoryValueModal [data-bs-dismiss="modal"]', function (e) {
+            if (!journalDirectoryValueModalStack.length) {
+                return;
+            }
+
+            e.preventDefault();
+            unwindNestedJournalDirectoryValueModal();
+        });
+
+        $('#directoryValueModal').on('hidden.bs.modal', function () {
+            journalDirectoryValueModalDirectory = null;
+            journalDirectoryValueModalStack = [];
         });
 
         $('#applyFilters').on('click', function () {
@@ -1751,6 +2152,48 @@
             return url;
         }
 
+        function buildExportUrl(format) {
+            let params = new URLSearchParams();
+
+            if ($('#dateFrom').val()) {
+                params.append('date_from', $('#dateFrom').val());
+            }
+
+            if ($('#dateTo').val()) {
+                params.append('date_to', $('#dateTo').val());
+            }
+
+            if ($('#statusFilter').val()) {
+                params.append('status', $('#statusFilter').val());
+            }
+
+            if ($('#searchInput').val()) {
+                params.append('search', $('#searchInput').val());
+            }
+
+            let fieldFilters = collectFieldFilters();
+
+            Object.keys(fieldFilters).forEach(function (key) {
+                params.append(`field_filters[${key}]`, fieldFilters[key]);
+            });
+
+            if ($('#divisionFilter').length && $('#divisionFilter').val()) {
+                params.append('division_id', $('#divisionFilter').val());
+            }
+
+            if ($('#showDeletedFilter').is(':checked')) {
+                params.append('show_deleted', '1');
+            }
+
+            let url = `/journals/${journalId}/export/${encodeURIComponent(format)}`;
+
+            if (params.toString()) {
+                url += '?' + params.toString();
+            }
+
+            return url;
+        }
+
         $('#printJournalBtn').on('click', function () {
             @if($printTemplates->count() > 0)
                 printTemplateModal.show();
@@ -1764,6 +2207,44 @@
             printTemplateModal.hide();
             window.open(url, '_blank');
         });
+
+        $('#exportCsvBtn').on('click', function () {
+            window.open(buildExportUrl('csv'), '_blank');
+        });
+
+        $('#exportXmlBtn').on('click', function () {
+            window.open(buildExportUrl('xml'), '_blank');
+        });
+
+        @if($canManageJournal)
+        $('#importJournalBtn').on('click', function () {
+            $('#journalImportForm')[0].reset();
+            journalImportModal.show();
+        });
+
+        $('#journalImportForm').on('submit', function (e) {
+            e.preventDefault();
+
+            let formData = new FormData(this);
+            let format = $('#journalImportFormat').val() || 'csv';
+
+            $.ajax({
+                url: `/journals/${journalId}/import/${encodeURIComponent(format)}`,
+                method: 'POST',
+                data: formData,
+                processData: false,
+                contentType: false,
+                success: function (response) {
+                    showToast(response.message || 'Импорт завершён', 'success');
+                    journalImportModal.hide();
+                    loadEntries(1);
+                },
+                error: function (xhr) {
+                    showAjaxErrors(xhr);
+                }
+            });
+        });
+        @endif
 
         $('#toggleJournalFullscreenBtn').on('click', function () {
             journalFullscreen = !journalFullscreen;

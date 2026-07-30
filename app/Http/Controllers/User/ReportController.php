@@ -8,6 +8,7 @@ use App\Models\Division;
 use App\Models\JournalTemplate;
 use App\Models\ReportTemplate;
 use App\Models\User;
+use App\Models\UserReportPermission;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -17,11 +18,11 @@ class ReportController extends Controller
 {
     public function index()
     {
-        if (session('user_role') !== 'admin') {
-            abort(403, 'Отчёты доступны только администраторам');
-        }
-
-        $reports = ReportTemplate::where('is_active', true)
+        $reports = ReportTemplate::query()
+            ->where('is_active', true)
+            ->when(!$this->currentUserHasFullReportAccess(), function ($query) {
+                $query->whereIn('id', $this->currentUserReportIds());
+            })
             ->orderBy('name')
             ->get();
 
@@ -30,13 +31,7 @@ class ReportController extends Controller
 
     public function show(ReportTemplate $report)
     {
-        if (session('user_role') !== 'admin') {
-            abort(403, 'Отчёты доступны только администраторам');
-        }
-
-        if (!$report->is_active) {
-            abort(404);
-        }
+        $this->ensureReportAccess($report);
 
         $sources = $this->getSourcesForReport($report);
 
@@ -49,19 +44,10 @@ class ReportController extends Controller
 
     public function run(Request $request, ReportTemplate $report)
     {
-        if (session('user_role') !== 'admin') {
-            abort(403, 'Отчёты доступны только администраторам');
-        }
-
-        if (!$report->is_active) {
-            abort(404);
-        }
+        $this->ensureReportAccess($report);
 
         $bindings = $this->validateAndBuildBindings($request, $report);
-
-        $rows = DB::select($report->sql_query, $bindings);
-
-        $rows = $this->normalizeReportRows($rows);
+        $rows = $this->executeReport($report, $bindings);
 
         return response()->json([
             'success' => true,
@@ -72,23 +58,14 @@ class ReportController extends Controller
 
     public function export(Request $request, ReportTemplate $report)
     {
-        if (session('user_role') !== 'admin') {
-            abort(403, 'Отчёты доступны только администраторам');
-        }
-
-        if (!$report->is_active) {
-            abort(404);
-        }
+        $this->ensureReportAccess($report);
 
         $bindings = $this->validateAndBuildBindings($request, $report);
+        $rows = $this->executeReport($report, $bindings);
+        $columns = $this->getColumns($rows);
 
-        $rows = DB::select($report->sql_query, $bindings);
-
-        $rows = $this->normalizeReportRows($rows);
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
-
-        $columns = $this->getColumns($rows);
 
         $colIndex = 1;
 
@@ -121,7 +98,6 @@ class ReportController extends Controller
         }
 
         $fileName = 'report_' . ($report->code ?: $report->id) . '_' . date('Ymd_His') . '.xlsx';
-
         $tempPath = storage_path('app/' . $fileName);
 
         $writer = new Xlsx($spreadsheet);
@@ -130,11 +106,78 @@ class ReportController extends Controller
         return response()->download($tempPath, $fileName)->deleteFileAfterSend(true);
     }
 
+    public function print(Request $request, ReportTemplate $report)
+    {
+        $this->ensureReportAccess($report);
+
+        $bindings = $this->validateAndBuildBindings($request, $report);
+        $rows = $this->executeReport($report, $bindings);
+        $columns = $this->getColumns($rows);
+        $printSettings = $report->print_settings ?? [];
+
+        return view('user.reports.print', [
+            'report' => $report,
+            'columns' => $columns,
+            'rows' => $rows,
+            'params' => $request->input('params', []),
+            'printedAt' => now(),
+            'renderedHtml' => $this->renderReportPrintHtml($report, $columns, $rows, $request->input('params', [])),
+            'printOrientation' => $printSettings['orientation'] ?? 'portrait',
+            'printTitle' => trim((string) ($printSettings['title'] ?? '')) ?: $report->name,
+        ]);
+    }
+
+    private function executeReport(ReportTemplate $report, array $bindings): array
+    {
+        $rows = DB::select($report->sql_query, $bindings);
+
+        return $this->normalizeReportRows($rows);
+    }
+
+    private function currentUserHasFullReportAccess(): bool
+    {
+        return session('user_role') === 'admin';
+    }
+
+    private function currentUserReportIds(): array
+    {
+        $userId = (int) session('user_id');
+
+        if (!$userId) {
+            return [];
+        }
+
+        return UserReportPermission::query()
+            ->where('user_id', $userId)
+            ->pluck('report_template_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+    }
+
+    private function ensureReportAccess(ReportTemplate $report): void
+    {
+        if (!$report->is_active) {
+            abort(404);
+        }
+
+        if ($this->currentUserHasFullReportAccess()) {
+            return;
+        }
+
+        $hasAccess = UserReportPermission::query()
+            ->where('user_id', session('user_id'))
+            ->where('report_template_id', $report->id)
+            ->exists();
+
+        if (!$hasAccess) {
+            abort(403, 'Нет доступа к этому отчёту');
+        }
+    }
+
     private function validateAndBuildBindings(Request $request, ReportTemplate $report): array
     {
         $schema = $report->params_schema ?? [];
         $input = $request->input('params', []);
-
         $bindings = [];
 
         foreach ($schema as $field) {
@@ -169,16 +212,13 @@ class ReportController extends Controller
                     ], 422));
                 }
 
-                $bindings[$key] = (int)$value;
+                $bindings[$key] = (int) $value;
                 continue;
             }
 
             $bindings[$key] = $value;
         }
 
-        /*
-         * Системные параметры добавляем только если они реально есть в SQL.
-         */
         $sql = $report->sql_query;
 
         if (str_contains($sql, ':current_division_id')) {
@@ -189,21 +229,15 @@ class ReportController extends Controller
             $bindings['current_user_id'] = session('user_id');
         }
 
-        /*
-         * Финальная защита:
-         * оставляем только те bindings, которые реально есть в SQL.
-         */
-        $bindings = $this->filterBindingsBySql($sql, $bindings);
-
-        return $bindings;
+        return $this->filterBindingsBySql($sql, $bindings);
     }
+
     private function normalizeReportRows(array $rows): array
     {
         $normalizedRows = [];
 
         foreach ($rows as $row) {
-            $row = (array)$row;
-
+            $row = (array) $row;
             $normalized = [];
 
             foreach ($row as $column => $value) {
@@ -233,7 +267,7 @@ class ReportController extends Controller
         }
 
         if (is_object($value)) {
-            return (array)$value;
+            return (array) $value;
         }
 
         if (!is_string($value) || trim($value) === '') {
@@ -263,7 +297,7 @@ class ReportController extends Controller
             return json_encode($value, JSON_UNESCAPED_UNICODE);
         }
 
-        return (string)$value;
+        return (string) $value;
     }
 
     private function getColumns(array $rows): array
@@ -280,6 +314,134 @@ class ReportController extends Controller
 
         return $columns;
     }
+
+    private function renderReportPrintHtml(ReportTemplate $report, array $columns, array $rows, array $params): ?string
+    {
+        $template = trim((string) data_get($report->print_settings, 'body_html', ''));
+
+        if ($template === '') {
+            return null;
+        }
+
+        $template = $this->sanitizePrintTemplateHtml($template);
+
+        if (preg_match('/\{\{#rows\}\}(.*?)\{\{\/rows\}\}/s', $template)) {
+            $globalValues = $this->reportGlobalTemplateValues($report, $columns, $rows, $params);
+
+            $template = preg_replace_callback('/\{\{#rows\}\}(.*?)\{\{\/rows\}\}/s', function ($matches) use ($rows, $globalValues) {
+                $rowTemplate = $matches[1] ?? '';
+                $html = '';
+
+                foreach ($rows as $index => $row) {
+                    $html .= $this->replaceReportPrintTokens(
+                        $rowTemplate,
+                        array_merge($globalValues, $this->reportRowTemplateValues($row, $index + 1))
+                    );
+                }
+
+                return $html;
+            }, $template);
+        }
+
+        return $this->replaceReportPrintTokens(
+            $template,
+            $this->reportGlobalTemplateValues($report, $columns, $rows, $params),
+            $this->buildReportPrintTableHtml($columns, $rows)
+        );
+    }
+
+    private function replaceReportPrintTokens(string $template, array $values, ?string $tableHtml = null): string
+    {
+        return preg_replace_callback('/\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}/', function ($matches) use ($values, $tableHtml) {
+            $key = $matches[1] ?? '';
+
+            if ($key === 'table') {
+                return $tableHtml ?? '';
+            }
+
+            return e($values[$key] ?? '');
+        }, $template);
+    }
+
+    private function reportGlobalTemplateValues(ReportTemplate $report, array $columns, array $rows, array $params): array
+    {
+        $values = [
+            'report.name' => $report->name,
+            'report.description' => $report->description ?? '',
+            'report.row_count' => count($rows),
+            'report.columns_count' => count($columns),
+            'print.date' => now()->format('d.m.Y H:i'),
+            'print.title' => trim((string) data_get($report->print_settings, 'title', '')) ?: $report->name,
+        ];
+
+        foreach ($params as $key => $value) {
+            if (is_array($value) || is_object($value)) {
+                $value = json_encode($value, JSON_UNESCAPED_UNICODE);
+            }
+
+            $values['params.' . $key] = (string) ($value ?? '');
+        }
+
+        return $values;
+    }
+
+    private function reportRowTemplateValues(array $row, int $index): array
+    {
+        $values = [
+            'row.index' => $index,
+        ];
+
+        foreach ($row as $column => $value) {
+            if (is_array($value) || is_object($value)) {
+                $value = json_encode($value, JSON_UNESCAPED_UNICODE);
+            }
+
+            $values['row.' . $column] = (string) ($value ?? '');
+        }
+
+        return $values;
+    }
+
+    private function buildReportPrintTableHtml(array $columns, array $rows): string
+    {
+        $html = '<table><thead><tr>';
+
+        foreach ($columns as $column) {
+            $html .= '<th>' . e($column) . '</th>';
+        }
+
+        $html .= '</tr></thead><tbody>';
+
+        if (count($rows) === 0) {
+            $html .= '<tr><td colspan="' . max(1, count($columns)) . '" style="text-align:center;">Данных нет</td></tr>';
+        }
+
+        foreach ($rows as $row) {
+            $html .= '<tr>';
+
+            foreach ($columns as $column) {
+                $html .= '<td>' . e((string) ($row[$column] ?? '')) . '</td>';
+            }
+
+            $html .= '</tr>';
+        }
+
+        $html .= '</tbody></table>';
+
+        return $html;
+    }
+
+    private function sanitizePrintTemplateHtml(string $html): string
+    {
+        $allowedTags = '<div><section><article><header><footer><main><p><br><span><strong><b><em><i><u><small><h1><h2><h3><h4><h5><h6><table><thead><tbody><tfoot><tr><th><td><ul><ol><li><hr>';
+        $html = strip_tags($html, $allowedTags);
+        $html = preg_replace('/\son[a-z]+\s*=\s*("[^"]*"|\'[^\']*\'|[^\s>]+)/i', '', $html);
+        $html = preg_replace('/\s(?:href|src)\s*=\s*("[^"]*"|\'[^\']*\'|[^\s>]+)/i', '', $html);
+        $html = preg_replace('/javascript\s*:/i', '', $html);
+
+        return $html;
+    }
+
     private function filterBindingsBySql(string $sql, array $bindings): array
     {
         preg_match_all('/:[a-zA-Z_][a-zA-Z0-9_]*/', $sql, $matches);
@@ -295,7 +457,6 @@ class ReportController extends Controller
         return array_intersect_key($bindings, array_flip($placeholders));
     }
 
-
     private function getSourcesForReport(ReportTemplate $report): array
     {
         $schema = $report->params_schema ?? [];
@@ -309,14 +470,11 @@ class ReportController extends Controller
             }
 
             if (($field['source'] ?? '') === 'divisions') {
-                $sources[$key] = Division::orderBy('name')
-                    ->get(['id', 'name']);
+                $sources[$key] = Division::orderBy('name')->get(['id', 'name']);
             } elseif (($field['source'] ?? '') === 'users') {
-                $sources[$key] = User::orderBy('name')
-                    ->get(['id', 'name']);
+                $sources[$key] = User::orderBy('name')->get(['id', 'name']);
             } elseif (($field['source'] ?? '') === 'journal_templates') {
-                $sources[$key] = JournalTemplate::orderBy('name')
-                    ->get(['id', 'name']);
+                $sources[$key] = JournalTemplate::orderBy('name')->get(['id', 'name']);
             } elseif (!empty($field['directory_id'])) {
                 $sources[$key] = DirectoryValue::where('directory_id', $field['directory_id'])
                     ->where('is_active', true)

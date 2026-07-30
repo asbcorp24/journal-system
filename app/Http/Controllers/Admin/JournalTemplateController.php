@@ -215,13 +215,14 @@ class JournalTemplateController extends Controller
 
         $payload = $this->readImportPayload($request, 'journal_template');
         $template = $payload['template'] ?? [];
+        $importedCode = $this->generateImportedCode($template['code'] ?? null);
         $input = [
             'name' => $this->generateImportedName((string) ($template['name'] ?? 'Журнал')),
-            'code' => $this->generateImportedCode($template['code'] ?? null),
+            'code' => $importedCode,
             'description' => $template['description'] ?? null,
             'is_active' => !empty($template['is_active']),
             'division_ids' => $this->resolveDivisionIdsFromImport($template['divisions'] ?? []),
-            'schema' => $this->importJournalSchema($template['schema'] ?? []),
+            'schema' => $this->importJournalSchema($template['schema'] ?? [], (string) ($template['code'] ?? ''), (string) ($importedCode ?? '')),
         ];
 
         $validated = $this->normalizeTemplateInput($input);
@@ -608,9 +609,9 @@ class JournalTemplateController extends Controller
         })->values()->all();
     }
 
-    private function importJournalSchema(array $schema): array
+    private function importJournalSchema(array $schema, string $sourceCode = '', string $importedCode = ''): array
     {
-        return collect($schema)->map(function ($field) {
+        return collect($schema)->map(function ($field) use ($sourceCode, $importedCode) {
             if (!is_array($field)) {
                 throw ValidationException::withMessages([
                     'template_file' => ['Некорректное описание поля в импортируемом журнале'],
@@ -629,6 +630,14 @@ class JournalTemplateController extends Controller
                 }
 
                 $field['directory_id'] = $directory->id;
+            }
+
+            if (($field['type'] ?? '') === 'sql' && !empty($field['sql_query']) && $sourceCode !== '' && $importedCode !== '') {
+                $field['sql_query'] = str_replace(
+                    "code = '{$sourceCode}'",
+                    "code = '{$importedCode}'",
+                    (string) $field['sql_query']
+                );
             }
 
             unset($field['directory_ref']);

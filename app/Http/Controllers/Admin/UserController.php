@@ -5,8 +5,10 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Division;
 use App\Models\JournalTemplate;
+use App\Models\ReportTemplate;
 use App\Models\User;
 use App\Models\UserJournalPermission;
+use App\Models\UserReportPermission;
 use App\Services\UserPasswordCipher;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -28,8 +30,12 @@ class UserController extends Controller
                 'division_ids' => $journal->divisions->pluck('id')->values()->all(),
             ];
         })->values()->all();
+        $reports = ReportTemplate::query()
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get(['id', 'name', 'description']);
 
-        return view('admin.users.index', compact('divisions', 'journals', 'journalOptions'));
+        return view('admin.users.index', compact('divisions', 'journals', 'journalOptions', 'reports'));
     }
 
     public function list(Request $request)
@@ -57,6 +63,7 @@ class UserController extends Controller
         $users = $query->paginate(10);
         $users->getCollection()->transform(function ($user) {
             $user->decrypted_password = UserPasswordCipher::decryptPassword($user->password);
+
             return $user;
         });
 
@@ -248,7 +255,52 @@ class UserController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => 'Доступ удалён.',
+            'message' => 'Доступ к журналу удалён.',
+        ]);
+    }
+
+    public function reportPermissions(User $user)
+    {
+        $permissions = $user->reportPermissions()
+            ->with('reportTemplate')
+            ->orderBy('report_template_id')
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'permissions' => $permissions,
+        ]);
+    }
+
+    public function storeReportPermission(Request $request, User $user)
+    {
+        $validated = $request->validate([
+            'report_template_id' => ['required', 'exists:report_templates,id'],
+        ]);
+
+        $permission = UserReportPermission::query()->firstOrCreate([
+            'user_id' => $user->id,
+            'report_template_id' => $validated['report_template_id'],
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Доступ к отчёту сохранён.',
+            'permission' => $permission->load('reportTemplate'),
+        ]);
+    }
+
+    public function destroyReportPermission(User $user, UserReportPermission $permission)
+    {
+        if ((int) $permission->user_id !== (int) $user->id) {
+            abort(404);
+        }
+
+        $permission->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Доступ к отчёту удалён.',
         ]);
     }
 }

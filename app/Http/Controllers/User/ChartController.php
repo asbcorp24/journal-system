@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\User;
 
 use App\Http\Controllers\Controller;
+use App\Models\DirectoryValue;
 use App\Models\Division;
 use App\Models\JournalEntry;
 use App\Models\JournalTemplate;
@@ -16,17 +17,44 @@ class ChartController extends Controller
         $divisionId = session('user_division_id');
         $managedDivisionIds = DivisionTree::managedDivisionIds($divisionId, session('user_role'));
 
-        $journals = JournalTemplate::query()
-            ->where('is_active', true)
-            ->whereHas('divisions', function ($q) use ($managedDivisionIds) {
-                $q->whereIn('divisions.id', $managedDivisionIds);
-            })
+        $journals = $this->accessibleJournalsQuery($managedDivisionIds)
             ->orderBy('name')
             ->get();
 
         $divisions = Division::whereIn('id', $managedDivisionIds)->orderBy('name')->get();
+        $chartJournalFilters = $journals->map(function (JournalTemplate $journal) {
+            $fields = collect($journal->schema ?? [])
+                ->filter(function ($field) {
+                    return !empty($field['filterable']);
+                })
+                ->values()
+                ->all();
 
-        return view('user.charts.index', compact('journals', 'divisions'));
+            return [
+                'id' => $journal->id,
+                'name' => $journal->name,
+                'fields' => $fields,
+            ];
+        })->values();
+        $directoryIds = $chartJournalFilters
+            ->pluck('fields')
+            ->flatten(1)
+            ->filter(function ($field) {
+                return in_array($field['type'] ?? '', ['directory', 'directory_text'], true)
+                    && !empty($field['directory_id']);
+            })
+            ->pluck('directory_id')
+            ->unique()
+            ->values();
+        $chartDirectoryValues = DirectoryValue::query()
+            ->whereIn('directory_id', $directoryIds)
+            ->where('is_active', true)
+            ->orderBy('sort_order')
+            ->orderBy('value')
+            ->get()
+            ->groupBy('directory_id');
+
+        return view('user.charts.index', compact('journals', 'divisions', 'chartJournalFilters', 'chartDirectoryValues'));
     }
 
     public function data(Request $request)
@@ -36,10 +64,9 @@ class ChartController extends Controller
         $userId = session('user_id');
         $managedDivisionIds = DivisionTree::managedDivisionIds($divisionId, $role);
 
-        $journals = JournalTemplate::query()
-            ->where('is_active', true)
-            ->whereHas('divisions', function ($q) use ($managedDivisionIds) {
-                $q->whereIn('divisions.id', $managedDivisionIds);
+        $journals = $this->accessibleJournalsQuery($managedDivisionIds)
+            ->when($request->filled('journal_id'), function ($query) use ($request) {
+                $query->whereKey((int) $request->journal_id);
             })
             ->orderBy('name')
             ->get();
@@ -96,6 +123,8 @@ class ChartController extends Controller
             if ($request->filled('date_to')) {
                 $query->whereDate('entry_date', '<=', $request->date_to);
             }
+
+            $this->applyFieldFilters($query, $schema, $request);
 
             $entries = $query->get();
 
@@ -155,5 +184,53 @@ class ChartController extends Controller
             'success' => true,
             'journals' => $result,
         ]);
+    }
+
+    private function accessibleJournalsQuery(array $managedDivisionIds)
+    {
+        return JournalTemplate::query()
+            ->where('is_active', true)
+            ->whereHas('divisions', function ($q) use ($managedDivisionIds) {
+                $q->whereIn('divisions.id', $managedDivisionIds);
+            });
+    }
+
+    private function applyFieldFilters($query, array $schema, Request $request): void
+    {
+        foreach ($schema as $field) {
+            if (empty($field['filterable'])) {
+                continue;
+            }
+
+            $key = $field['key'] ?? null;
+            $type = $field['type'] ?? 'string';
+
+            if (!$key) {
+                continue;
+            }
+
+            $filterValue = $request->input("field_filters.{$key}");
+
+            if ($filterValue === null || $filterValue === '') {
+                continue;
+            }
+
+            $jsonPath = '$.' . $key;
+
+            if (in_array($type, ['number', 'directory'], true) && is_numeric($filterValue)) {
+                $query->whereRaw('CAST(json_extract(data, ?) AS NUMERIC) = ?', [$jsonPath, $filterValue + 0]);
+                continue;
+            }
+
+            if (in_array($type, ['date', 'time', 'list', 'directory_text'], true)) {
+                $query->whereRaw('json_extract(data, ?) = ?', [$jsonPath, (string) $filterValue]);
+                continue;
+            }
+
+            $query->whereRaw('LOWER(COALESCE(json_extract(data, ?), \'\')) LIKE ?', [
+                $jsonPath,
+                '%' . mb_strtolower((string) $filterValue) . '%',
+            ]);
+        }
     }
 }

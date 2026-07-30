@@ -1,0 +1,13 @@
+{
+  "kind": "report_template",
+  "version": 1,
+  "exported_at": "2026-07-28T16:00:00+03:00",
+  "template": {
+    "name": "Остатки номенклатуры на складе",
+    "code": "warehouse_stock_balance",
+    "description": "Показывает по каждой позиции номенклатуры приход, расход и текущий остаток на складе",
+    "sql_query": "SELECT\n    dv.id AS item_id,\n    dv.value AS item_name,\n    json_extract(dv.data, '$.item_number') AS item_number,\n    json_extract(dv.data, '$.unit') AS unit,\n    json_extract(dv.data, '$.parameters') AS parameters,\n    ROUND(COALESCE(receipts.received_quantity, 0), 3) AS received_quantity,\n    ROUND(COALESCE(issues.issued_quantity, 0), 3) AS issued_quantity,\n    ROUND(COALESCE(receipts.received_quantity, 0) - COALESCE(issues.issued_quantity, 0), 3) AS stock_balance\nFROM directory_values dv\nINNER JOIN directories d\n    ON d.id = dv.directory_id\nLEFT JOIN (\n    SELECT\n        CAST(json_extract(je.data, '$.item') AS INTEGER) AS item_id,\n        SUM(CAST(json_extract(je.data, '$.quantity') AS REAL)) AS received_quantity\n    FROM journal_entries je\n    WHERE je.journal_template_id = (\n        SELECT id\n        FROM journal_templates\n        WHERE code = 'warehouse_receipt'\n           OR code LIKE 'warehouse_receipt_import%'\n        ORDER BY CASE WHEN code = 'warehouse_receipt' THEN 0 ELSE 1 END, id\n        LIMIT 1\n    )\n      AND je.deleted_at IS NULL\n      AND je.status != 'rejected'\n    GROUP BY CAST(json_extract(je.data, '$.item') AS INTEGER)\n) receipts\n    ON receipts.item_id = dv.id\nLEFT JOIN (\n    SELECT\n        CAST(json_extract(je.data, '$.item') AS INTEGER) AS item_id,\n        SUM(CAST(json_extract(je.data, '$.quantity') AS REAL)) AS issued_quantity\n    FROM journal_entries je\n    WHERE je.journal_template_id = (\n        SELECT id\n        FROM journal_templates\n        WHERE code = 'warehouse_issue'\n           OR code LIKE 'warehouse_issue_import%'\n        ORDER BY CASE WHEN code = 'warehouse_issue' THEN 0 ELSE 1 END, id\n        LIMIT 1\n    )\n      AND je.deleted_at IS NULL\n      AND je.status != 'rejected'\n    GROUP BY CAST(json_extract(je.data, '$.item') AS INTEGER)\n) issues\n    ON issues.item_id = dv.id\nWHERE d.code = 'warehouse_nomenclature'\n  AND dv.is_active = 1\nORDER BY item_name",
+    "params_schema": [],
+    "is_active": true
+  }
+}

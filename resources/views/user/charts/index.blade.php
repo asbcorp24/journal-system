@@ -31,6 +31,16 @@
                     <input type="date" id="dateTo" class="form-control">
                 </div>
 
+                <div class="col-md-3">
+                    <label class="form-label">Журнал</label>
+                    <select id="journalFilter" class="form-select">
+                        <option value="">Все журналы</option>
+                        @foreach($journals as $journal)
+                            <option value="{{ $journal->id }}">{{ $journal->name }}</option>
+                        @endforeach
+                    </select>
+                </div>
+
                 @if(session('user_role') === 'admin')
                     <div class="col-md-3">
                         <label class="form-label">Подразделение</label>
@@ -45,15 +55,19 @@
                     </div>
                 @endif
 
+                <div class="col-12">
+                    <div id="chartFieldFiltersContainer" class="row g-3"></div>
+                </div>
+
                 <div class="col-md-2">
                     <button class="btn btn-primary w-100" id="applyFilters">
                         Применить
                     </button>
                 </div>
 
-                <div class="col-md-1">
+                <div class="col-md-2">
                     <button class="btn btn-outline-light w-100" id="resetFilters">
-                        <i class="bi bi-x-lg"></i>
+                        Сбросить
                     </button>
                 </div>
             </div>
@@ -78,6 +92,8 @@
     <script src="{{ asset('vendor/jquery/chart.js') }}"></script>
 
     <script>
+        const chartJournalFilters = @json($chartJournalFilters);
+        const chartDirectoryValues = @json($chartDirectoryValues);
         let chartInstances = {};
 
         function destroyCharts() {
@@ -88,23 +104,124 @@
             chartInstances = {};
         }
 
+        function getSelectedJournalFilterMeta() {
+            let journalId = $('#journalFilter').val();
+
+            if (!journalId) {
+                return null;
+            }
+
+            return chartJournalFilters.find(function (item) {
+                return String(item.id) === String(journalId);
+            }) || null;
+        }
+
+        function getChartDirectoryOptionLabel(field, item) {
+            if (!item) {
+                return '';
+            }
+
+            let displayField = field.directory_display_field || '';
+
+            if (displayField && item.data && item.data[displayField] !== undefined && item.data[displayField] !== null && item.data[displayField] !== '') {
+                return item.data[displayField];
+            }
+
+            return item.value || '';
+        }
+
+        function renderChartFieldFilters() {
+            let journal = getSelectedJournalFilterMeta();
+            let html = '';
+
+            if (!journal || !journal.fields || journal.fields.length === 0) {
+                $('#chartFieldFiltersContainer').html('');
+                return;
+            }
+
+            journal.fields.forEach(function (field) {
+                html += `<div class="col-md-3">`;
+                html += `<label class="form-label">${escapeHtml(field.label || field.key || '')}</label>`;
+
+                if (field.type === 'date') {
+                    html += `<input type="date" class="form-control chart-field-filter" data-key="${field.key}">`;
+                } else if (field.type === 'time') {
+                    html += `<input type="time" class="form-control chart-field-filter" data-key="${field.key}">`;
+                } else if (field.type === 'number') {
+                    html += `<input type="number" step="any" class="form-control chart-field-filter" data-key="${field.key}" placeholder="Введите значение">`;
+                } else if (field.type === 'list') {
+                    html += `<select class="form-select chart-field-filter" data-key="${field.key}"><option value="">Все</option>`;
+
+                    (field.options || []).forEach(function (option) {
+                        html += `<option value="${escapeHtml(option)}">${escapeHtml(option)}</option>`;
+                    });
+
+                    html += `</select>`;
+                } else if (field.type === 'directory') {
+                    html += `<select class="form-select chart-field-filter" data-key="${field.key}"><option value="">Все</option>`;
+
+                    (chartDirectoryValues[field.directory_id] || []).forEach(function (item) {
+                        html += `<option value="${item.id}">${escapeHtml(getChartDirectoryOptionLabel(field, item))}</option>`;
+                    });
+
+                    html += `</select>`;
+                } else if (field.type === 'directory_text') {
+                    html += `<select class="form-select chart-field-filter" data-key="${field.key}"><option value="">Все</option>`;
+
+                    (chartDirectoryValues[field.directory_id] || []).forEach(function (item) {
+                        let label = getChartDirectoryOptionLabel(field, item);
+                        html += `<option value="${escapeHtml(label)}">${escapeHtml(label)}</option>`;
+                    });
+
+                    html += `</select>`;
+                } else {
+                    html += `<input type="text" class="form-control chart-field-filter" data-key="${field.key}" placeholder="Поиск по полю">`;
+                }
+
+                html += `</div>`;
+            });
+
+            $('#chartFieldFiltersContainer').html(html);
+
+            if (document.getElementById('chartFieldFiltersContainer')) {
+                initSearchableSelects(document.getElementById('chartFieldFiltersContainer'));
+            }
+        }
+
+        function collectChartFieldFilters() {
+            let filters = {};
+
+            $('.chart-field-filter').each(function () {
+                let key = $(this).data('key');
+                let value = $(this).val();
+
+                if (value !== null && value !== '') {
+                    filters[key] = value;
+                }
+            });
+
+            return filters;
+        }
+
         function loadCharts() {
             destroyCharts();
 
             $('#journalTabs').html('');
             $('#journalTabsContent').html(`
-            <div class="text-center text-secondary py-5">
-                Загрузка графиков...
-            </div>
-        `);
+                <div class="text-center text-secondary py-5">
+                    Загрузка графиков...
+                </div>
+            `);
 
             $.ajax({
                 url: "{{ route('user.charts.data') }}",
-                method: "GET",
+                method: 'GET',
                 data: {
                     date_from: $('#dateFrom').val(),
                     date_to: $('#dateTo').val(),
-                    division_id: $('#divisionFilter').length ? $('#divisionFilter').val() : ''
+                    division_id: $('#divisionFilter').length ? $('#divisionFilter').val() : '',
+                    journal_id: $('#journalFilter').val(),
+                    field_filters: collectChartFieldFilters()
                 },
                 success: function (response) {
                     renderJournalTabs(response.journals || []);
@@ -119,10 +236,10 @@
             if (!journals || journals.length === 0) {
                 $('#journalTabs').html('');
                 $('#journalTabsContent').html(`
-                <div class="text-center text-secondary py-5">
-                    Нет доступных журналов
-                </div>
-            `);
+                    <div class="text-center text-secondary py-5">
+                        Нет доступных данных для графиков
+                    </div>
+                `);
                 return;
             }
 
@@ -136,27 +253,27 @@
                 let contentId = `journal-content-${journal.journal_id}`;
 
                 tabsHtml += `
-                <li class="nav-item" role="presentation">
-                    <button class="nav-link ${active}"
-                            id="${tabId}"
-                            data-bs-toggle="tab"
-                            data-bs-target="#${contentId}"
-                            type="button"
-                            role="tab"
-                            aria-selected="${selected}">
-                        ${escapeHtml(journal.journal_name)}
-                    </button>
-                </li>
-            `;
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link ${active}"
+                                id="${tabId}"
+                                data-bs-toggle="tab"
+                                data-bs-target="#${contentId}"
+                                type="button"
+                                role="tab"
+                                aria-selected="${selected}">
+                            ${escapeHtml(journal.journal_name)}
+                        </button>
+                    </li>
+                `;
 
                 contentHtml += `
-                <div class="tab-pane fade show ${active}"
-                     id="${contentId}"
-                     role="tabpanel"
-                     aria-labelledby="${tabId}">
-                    ${renderJournalChartsContainer(journal)}
-                </div>
-            `;
+                    <div class="tab-pane fade show ${active}"
+                         id="${contentId}"
+                         role="tabpanel"
+                         aria-labelledby="${tabId}">
+                        ${renderJournalChartsContainer(journal)}
+                    </div>
+                `;
             });
 
             $('#journalTabs').html(tabsHtml);
@@ -170,57 +287,57 @@
         function renderJournalChartsContainer(journal) {
             if (!journal.charts || journal.charts.length === 0) {
                 return `
-                <div class="text-center text-secondary py-5">
-                    В этом журнале нет числовых полей type = number или type = calc
-                </div>
-            `;
+                    <div class="text-center text-secondary py-5">
+                        В этом журнале нет числовых полей type = number или type = calc
+                    </div>
+                `;
             }
 
             let html = `
-            <div class="mb-3">
-                <h5 class="fw-bold">${escapeHtml(journal.journal_name)}</h5>
-                <div class="text-secondary">
-                    Найдено числовых показателей: ${journal.charts.length}
+                <div class="mb-3">
+                    <h5 class="fw-bold">${escapeHtml(journal.journal_name)}</h5>
+                    <div class="text-secondary">
+                        Найдено числовых показателей: ${journal.charts.length}
+                    </div>
                 </div>
-            </div>
 
-            <div class="row g-4">
-        `;
+                <div class="row g-4">
+            `;
 
             journal.charts.forEach(function (chart) {
                 let canvasId = `chart_${journal.journal_id}_${chart.key}`;
 
                 html += `
-                <div class="col-md-12">
-                    <div class="card">
-                        <div class="card-body">
-                            <div class="d-flex justify-content-between align-items-start mb-3">
-                                <div>
-                                    <h5 class="fw-bold mb-1">
-                                        ${escapeHtml(chart.label)}
-                                    </h5>
-                                    <div class="text-secondary small">
-                                        Поле: ${escapeHtml(chart.key)} / тип: ${escapeHtml(chart.type)}
+                    <div class="col-md-12">
+                        <div class="card">
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between align-items-start mb-3">
+                                    <div>
+                                        <h5 class="fw-bold mb-1">
+                                            ${escapeHtml(chart.label)}
+                                        </h5>
+                                        <div class="text-secondary small">
+                                            Поле: ${escapeHtml(chart.key)} / тип: ${escapeHtml(chart.type)}
+                                        </div>
                                     </div>
+
+                                    <span class="badge bg-info text-dark">
+                                        Точек: ${chart.points ? chart.points.length : 0}
+                                    </span>
                                 </div>
 
-                                <span class="badge bg-info text-dark">
-                                    Точек: ${chart.points ? chart.points.length : 0}
-                                </span>
+                                ${chart.points && chart.points.length > 0
+                                    ? `<div style="height: 340px;">
+                                           <canvas id="${canvasId}"></canvas>
+                                       </div>`
+                                    : `<div class="text-center text-secondary py-5">
+                                           Нет числовых данных для построения графика
+                                       </div>`
+                                }
                             </div>
-
-                            ${chart.points && chart.points.length > 0
-                    ? `<div style="height: 340px;">
-                                       <canvas id="${canvasId}"></canvas>
-                                   </div>`
-                    : `<div class="text-center text-secondary py-5">
-                                       Нет числовых данных для построения графика
-                                   </div>`
-                }
                         </div>
                     </div>
-                </div>
-            `;
+                `;
             });
 
             html += `</div>`;
@@ -320,6 +437,8 @@
         $('#resetFilters').on('click', function () {
             $('#dateFrom').val('');
             $('#dateTo').val('');
+            $('#journalFilter').val('');
+            $('#chartFieldFiltersContainer').html('');
 
             if ($('#divisionFilter').length) {
                 $('#divisionFilter').val('');
@@ -332,12 +451,29 @@
             loadCharts();
         });
 
+        $('#journalFilter').on('change', function () {
+            renderChartFieldFilters();
+        });
+
         if ($('#divisionFilter').length) {
             $('#divisionFilter').on('change', function () {
                 loadCharts();
             });
         }
 
+        $(document).on('keyup', '.chart-field-filter', function (e) {
+            if (e.key === 'Enter') {
+                loadCharts();
+            }
+        });
+
+        $(document).on('change', '.chart-field-filter', function () {
+            if ($(this).is('select, input[type="date"], input[type="time"]')) {
+                loadCharts();
+            }
+        });
+
+        renderChartFieldFilters();
         loadCharts();
     </script>
 @endpush

@@ -9,7 +9,7 @@ use Illuminate\Validation\ValidationException;
 
 class DirectorySchema
 {
-    public const FIELD_TYPES = ['text', 'number', 'date', 'time', 'list', 'qr', 'directory'];
+    public const FIELD_TYPES = ['text', 'number', 'date', 'time', 'list', 'qr', 'directory', 'calc'];
 
     public static function normalizeSchema($schema): array
     {
@@ -51,6 +51,18 @@ class DirectorySchema
 
             if ($type === 'qr') {
                 $item['auto_generate'] = self::toBoolean($field['auto_generate'] ?? false);
+            }
+
+            if ($type === 'calc') {
+                $formula = trim((string) ($field['formula'] ?? ''));
+
+                if ($formula === '') {
+                    throw ValidationException::withMessages([
+                        'schema' => ["Для поля «{$label}» нужно указать формулу"],
+                    ]);
+                }
+
+                $item['formula'] = $formula;
             }
 
             if ($type === 'directory') {
@@ -126,12 +138,19 @@ class DirectorySchema
 
         $result = [];
 
+        $calcFields = [];
+
         foreach ($schema as $field) {
             $key = $field['key'];
             $label = $field['label'];
             $type = $field['type'];
             $required = !empty($field['required']);
             $value = $data[$key] ?? null;
+
+            if ($type === 'calc') {
+                $calcFields[] = $field;
+                continue;
+            }
 
             if (is_string($value)) {
                 $value = trim($value);
@@ -218,6 +237,10 @@ class DirectorySchema
 
                 $result[$key] = (int) $value;
             }
+        }
+
+        foreach ($calcFields as $field) {
+            $result[$field['key']] = self::evaluateCalcFormula((string) ($field['formula'] ?? ''), $result);
         }
 
         return $result;
@@ -335,6 +358,46 @@ class DirectorySchema
         }
 
         return (string) $left === (string) $right;
+    }
+
+    private static function evaluateCalcFormula(string $formula, array $values)
+    {
+        $expression = $formula;
+
+        foreach ($values as $key => $value) {
+            $numericValue = 0;
+
+            if ($value !== null && $value !== '' && is_numeric((string) $value)) {
+                $numericValue = $value + 0;
+            }
+
+            $expression = preg_replace('/\b' . preg_quote((string) $key, '/') . '\b/u', (string) $numericValue, $expression);
+        }
+
+        if (!preg_match('/^[0-9+\-*/().,\s]+$/', $expression)) {
+            throw ValidationException::withMessages([
+                'data' => ['Некорректная формула вычисляемого поля справочника'],
+            ]);
+        }
+
+        $expression = str_replace(',', '.', $expression);
+
+        set_error_handler(function () {
+        });
+
+        try {
+            $result = eval('return ' . $expression . ';');
+        } finally {
+            restore_error_handler();
+        }
+
+        if (!is_numeric($result) || !is_finite((float) $result)) {
+            throw ValidationException::withMessages([
+                'data' => ['Формула вычисляемого поля справочника вернула некорректное значение'],
+            ]);
+        }
+
+        return round((float) $result, 6);
     }
 
     private static function toBoolean($value): bool

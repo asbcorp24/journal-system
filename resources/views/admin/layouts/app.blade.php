@@ -138,6 +138,16 @@
             gap: 8px;
         }
 
+        .input-group > .searchable-select-box {
+            flex: 1 1 auto;
+            min-width: 0;
+        }
+
+        .input-group > .searchable-select-box + .btn {
+            position: relative;
+            z-index: 2;
+        }
+
         .searchable-select-input-wrap {
             position: relative;
         }

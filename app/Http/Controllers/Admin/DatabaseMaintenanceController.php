@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Support\SqlDebugLogger;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -24,7 +25,84 @@ class DatabaseMaintenanceController extends Controller
             'driver' => $driver,
             'databasePath' => $databasePath,
             'databaseExists' => $databasePath ? File::exists($databasePath) : false,
+            'debugAvailable' => false,
+            'sqlDebugEnabled' => false,
+            'debugLogs' => null,
+            'sqlInput' => '',
+            'sqlResult' => null,
         ]);
+    }
+
+    public function runSql(Request $request): View
+    {
+        $request->validate([
+            'sql' => ['required', 'string', 'max:50000'],
+        ], [
+            'sql.required' => 'Введите SQL-запрос.',
+            'sql.max' => 'SQL-запрос слишком длинный.',
+        ]);
+
+        $connection = config('database.default');
+        $driver = config("database.connections.{$connection}.driver");
+        $databasePath = $this->databasePath();
+        $sql = trim((string) $request->input('sql'));
+        $statementType = strtolower((string) preg_replace('/\s+.*/', '', ltrim($sql)));
+        $result = [
+            'type' => $statementType,
+            'success' => true,
+            'message' => null,
+            'columns' => [],
+            'rows' => [],
+            'row_count' => null,
+        ];
+
+        try {
+            $startedAt = microtime(true);
+            $pdo = DB::connection()->getPdo();
+            $statement = $pdo->prepare($sql);
+            $statement->execute();
+            SqlDebugLogger::logManualQuery($sql, [], round((microtime(true) - $startedAt) * 1000, 3));
+
+            if (in_array($statementType, ['select', 'pragma', 'show', 'describe', 'desc', 'with', 'explain'], true)) {
+                $rows = $statement->fetchAll(\PDO::FETCH_ASSOC);
+                $result['rows'] = $rows;
+                $result['columns'] = !empty($rows) ? array_keys($rows[0]) : [];
+                $result['row_count'] = count($rows);
+                $result['message'] = 'Запрос выполнен. Получено строк: ' . count($rows) . '.';
+            } else {
+                $result['row_count'] = $statement->rowCount();
+                $result['message'] = 'Запрос выполнен. Затронуто строк: ' . $statement->rowCount() . '.';
+            }
+        } catch (\Throwable $e) {
+            $result['success'] = false;
+            $result['message'] = $e->getMessage();
+        }
+
+        return view('admin.database.index', [
+            'connection' => $connection,
+            'driver' => $driver,
+            'databasePath' => $databasePath,
+            'databaseExists' => $databasePath ? File::exists($databasePath) : false,
+            'debugAvailable' => false,
+            'sqlDebugEnabled' => false,
+            'debugLogs' => null,
+            'sqlInput' => $sql,
+            'sqlResult' => $result,
+        ]);
+    }
+
+    public function updateDebug(Request $request): RedirectResponse
+    {
+        return redirect()
+            ->route('admin.database.index')
+            ->with('success', 'SQL-debug временно отключён.');
+    }
+
+    public function clearDebugLogs(): RedirectResponse
+    {
+        return redirect()
+            ->route('admin.database.index')
+            ->with('success', 'SQL-debug временно отключён.');
     }
 
     public function export(): BinaryFileResponse

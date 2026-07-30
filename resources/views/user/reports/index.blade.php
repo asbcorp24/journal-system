@@ -7,7 +7,7 @@
     <div class="mb-4">
         <h2 class="fw-bold mb-1">Отчёты</h2>
         <div class="text-secondary">
-            Формирование отчётов и экспорт в Excel
+            Формирование отчётов, печать и экспорт в Excel
         </div>
     </div>
 
@@ -35,7 +35,7 @@
 
                     @if($reports->count() === 0)
                         <div class="text-secondary text-center py-4">
-                            Нет доступных отчётов
+                            У вас пока нет доступных отчётов
                         </div>
                     @endif
                 </div>
@@ -52,9 +52,14 @@
                     <form id="reportParamsForm">
                         <div class="row g-3" id="paramsForm"></div>
 
-                        <div class="mt-4 d-none" id="reportActions">
+                        <div class="mt-4 d-none d-flex flex-wrap gap-2" id="reportActions">
                             <button type="submit" class="btn btn-primary">
                                 Сформировать
+                            </button>
+
+                            <button type="button" class="btn btn-outline-light" id="printBtn">
+                                <i class="bi bi-printer"></i>
+                                Печать
                             </button>
 
                             <button type="button" class="btn btn-success" id="exportBtn">
@@ -105,21 +110,13 @@
 
                 if (field.type === 'string') {
                     html += `<input type="text" class="form-control report-param" data-key="${field.key}" ${required}>`;
-                }
-
-                else if (field.type === 'number') {
+                } else if (field.type === 'number') {
                     html += `<input type="number" class="form-control report-param" data-key="${field.key}" ${required}>`;
-                }
-
-                else if (field.type === 'date') {
+                } else if (field.type === 'date') {
                     html += `<input type="date" class="form-control report-param" data-key="${field.key}" ${required}>`;
-                }
-
-                else if (field.type === 'time') {
+                } else if (field.type === 'time') {
                     html += `<input type="time" class="form-control report-param" data-key="${field.key}" ${required}>`;
-                }
-
-                else if (field.type === 'list') {
+                } else if (field.type === 'list') {
                     html += `<select class="form-select report-param" data-key="${field.key}" ${required}>`;
                     html += `<option value="">Выберите значение</option>`;
 
@@ -128,9 +125,7 @@
                     });
 
                     html += `</select>`;
-                }
-
-                else if (field.type === 'directory' || field.type === 'directory_text') {
+                } else if (field.type === 'directory' || field.type === 'directory_text') {
                     html += `<select class="form-select report-param" data-key="${field.key}" ${required}>`;
                     html += `<option value="">Выберите значение</option>`;
 
@@ -141,9 +136,7 @@
                     });
 
                     html += `</select>`;
-                }
-
-                else {
+                } else {
                     html += `<input type="text" class="form-control report-param" data-key="${field.key}" ${required}>`;
                 }
 
@@ -163,18 +156,54 @@
             return params;
         }
 
+        function submitReportForm(action, target = null) {
+            if (!selectedReportId) {
+                showToast('Выберите отчёт', 'warning');
+                return;
+            }
+
+            let form = $('<form>', {
+                method: 'POST',
+                action: action
+            });
+
+            if (target) {
+                form.attr('target', target);
+            }
+
+            form.append($('<input>', {
+                type: 'hidden',
+                name: '_token',
+                value: $('meta[name="csrf-token"]').attr('content')
+            }));
+
+            let params = collectParams();
+
+            Object.keys(params).forEach(function (key) {
+                form.append($('<input>', {
+                    type: 'hidden',
+                    name: `params[${key}]`,
+                    value: params[key]
+                }));
+            });
+
+            $('body').append(form);
+            form.trigger('submit');
+            form.remove();
+        }
+
         function renderResult(columns, rows) {
             $('#resultCard').removeClass('d-none');
 
             if (!columns || columns.length === 0) {
                 $('#resultHead').html('');
                 $('#resultBody').html(`
-                <tr>
-                    <td class="text-center text-secondary py-5">
-                        Данных нет
-                    </td>
-                </tr>
-            `);
+                    <tr>
+                        <td class="text-center text-secondary py-5">
+                            Данных нет
+                        </td>
+                    </tr>
+                `);
                 return;
             }
 
@@ -223,7 +252,7 @@
 
             $.ajax({
                 url: `/reports/${selectedReportId}`,
-                method: "GET",
+                method: 'GET',
                 success: function (response) {
                     selectedReport = response.report;
                     selectedSources = response.sources || {};
@@ -249,7 +278,7 @@
 
             $.ajax({
                 url: `/reports/${selectedReportId}/run`,
-                method: "POST",
+                method: 'POST',
                 data: {
                     params: collectParams()
                 },
@@ -264,35 +293,11 @@
         });
 
         $('#exportBtn').on('click', function () {
-            if (!selectedReportId) {
-                showToast('Выберите отчёт', 'warning');
-                return;
-            }
+            submitReportForm(`/reports/${selectedReportId}/export`);
+        });
 
-            let form = $('<form>', {
-                method: 'POST',
-                action: `/reports/${selectedReportId}/export`
-            });
-
-            form.append($('<input>', {
-                type: 'hidden',
-                name: '_token',
-                value: $('meta[name="csrf-token"]').attr('content')
-            }));
-
-            let params = collectParams();
-
-            Object.keys(params).forEach(function (key) {
-                form.append($('<input>', {
-                    type: 'hidden',
-                    name: `params[${key}]`,
-                    value: params[key]
-                }));
-            });
-
-            $('body').append(form);
-            form.submit();
-            form.remove();
+        $('#printBtn').on('click', function () {
+            submitReportForm(`/reports/${selectedReportId}/print`, '_blank');
         });
     </script>
 @endpush

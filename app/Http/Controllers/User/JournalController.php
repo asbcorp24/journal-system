@@ -15,6 +15,7 @@ use App\Support\DivisionTree;
 use App\Support\UserJournalAccess;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use App\Models\JournalEntryComment;
 use App\Models\JournalEntryLog;
 use App\Models\Notification;
@@ -309,18 +310,133 @@ class JournalController extends Controller
     public function print(Request $request, JournalTemplate $journal)
     {
         $access = $this->checkJournalAccess($journal);
-
         $schema = $journal->schema ?? [];
-
-        $query = JournalEntry::with([
+        $entries = $this->buildJournalEntriesQuery($request, $journal, $access, [
             'user',
             'division',
             'checker',
             'lastComment.user',
-        ])
-            ->where('journal_template_id', $journal->id)
-            ->orderByDesc('entry_date')
-            ->orderByDesc('id');
+        ], 'print')->get();
+
+        $directoryValues = $this->getDirectoryValuesForSchema($schema);
+        $printTemplate = $this->resolvePrintTemplate($request, $journal);
+        $printColumns = $this->resolvePrintColumns($journal, $printTemplate);
+        $printSettings = $printTemplate->settings ?? [
+            'orientation' => 'landscape',
+            'show_signatures' => true,
+        ];
+        $printHtmlEntries = $this->renderPrintHtmlEntries(
+            $journal,
+            $schema,
+            $entries,
+            $directoryValues,
+            $printTemplate
+        );
+
+        return view('user.journals.print', compact(
+            'journal',
+            'schema',
+            'entries',
+            'directoryValues',
+            'printTemplate',
+            'printColumns',
+            'printSettings',
+            'printHtmlEntries'
+        ));
+    }
+
+    public function export(Request $request, JournalTemplate $journal, string $format)
+    {
+        $access = $this->checkJournalAccess($journal);
+        $format = mb_strtolower(trim($format));
+
+        if (!in_array($format, ['csv', 'xml'], true)) {
+            abort(404);
+        }
+
+        $schema = $journal->schema ?? [];
+        $entries = $this->buildJournalEntriesQuery($request, $journal, $access, [
+            'user',
+            'division',
+        ], 'export')->get();
+
+        if ($format === 'csv') {
+            return $this->exportJournalCsv($journal, $schema, $entries);
+        }
+
+        return $this->exportJournalXml($journal, $schema, $entries);
+    }
+
+    public function import(Request $request, JournalTemplate $journal, string $format)
+    {
+        $access = $this->checkJournalAccess($journal);
+
+        if (empty($access['full_division_ids'])) {
+            abort(403, 'Нет прав на импорт в этот журнал');
+        }
+
+        $format = mb_strtolower(trim($format));
+
+        if (!in_array($format, ['csv', 'xml'], true)) {
+            abort(404);
+        }
+
+        $request->validate([
+            'import_file' => ['required', 'file', 'mimes:' . ($format === 'csv' ? 'csv,txt' : 'xml,txt')],
+        ]);
+
+        $rows = $format === 'csv'
+            ? $this->readJournalCsvRows($request)
+            : $this->readJournalXmlRows($request);
+
+        if (empty($rows)) {
+            throw ValidationException::withMessages([
+                'import_file' => ['Файл импорта пустой'],
+            ]);
+        }
+
+        $created = 0;
+        DB::transaction(function () use ($rows, $journal, $access, &$created) {
+            foreach ($rows as $index => $row) {
+                $divisionId = $this->resolveImportDivisionId($journal, $access, $row);
+                $requestData = new Request([
+                    'data' => $this->extractImportDataRow($journal->schema ?? [], $row),
+                    'entry_date' => $row['entry_date'] ?? null,
+                    'division_id' => $divisionId,
+                ]);
+
+                $validatedData = $this->validateEntryData($requestData, $journal, [], $divisionId, (int) session('user_id'));
+                $entryDate = $this->detectEntryDate($validatedData, $requestData);
+
+                JournalEntry::create([
+                    'journal_template_id' => $journal->id,
+                    'division_id' => $divisionId,
+                    'user_id' => session('user_id'),
+                    'entry_date' => $entryDate,
+                    'data' => $validatedData,
+                    'status' => 'submitted',
+                ]);
+
+                $created++;
+            }
+        });
+
+        return response()->json([
+            'success' => true,
+            'message' => "Импорт завершён. Добавлено записей: {$created}",
+        ]);
+    }
+
+    private function buildJournalEntriesQuery(Request $request, JournalTemplate $journal, array $access, array $with = [], string $mode = 'list')
+    {
+        $query = JournalEntry::with($with)
+            ->where('journal_template_id', $journal->id);
+
+        if ($mode === 'list') {
+            $query->orderByDesc('id');
+        } else {
+            $query->orderByDesc('entry_date')->orderByDesc('id');
+        }
 
         if ($request->boolean('show_deleted')) {
             $query->onlyTrashed();
@@ -354,35 +470,232 @@ class JournalController extends Controller
             });
         }
 
-        $this->applySchemaFilters($query, $request, $schema);
+        $this->applySchemaFilters($query, $request, $journal->schema ?? []);
 
-        $entries = $query->get();
+        return $query;
+    }
 
-        $directoryValues = $this->getDirectoryValuesForSchema($schema);
-        $printTemplate = $this->resolvePrintTemplate($request, $journal);
-        $printColumns = $this->resolvePrintColumns($journal, $printTemplate);
-        $printSettings = $printTemplate->settings ?? [
-            'orientation' => 'landscape',
-            'show_signatures' => true,
+    private function exportJournalCsv(JournalTemplate $journal, array $schema, $entries)
+    {
+        $fileName = 'journal_' . ($journal->code ?: $journal->id) . '_' . now()->format('Ymd_His') . '.csv';
+
+        return response()->streamDownload(function () use ($schema, $entries) {
+            $handle = fopen('php://output', 'w');
+            fputcsv($handle, $this->journalExportHeaders($schema), ';');
+
+            foreach ($entries as $entry) {
+                fputcsv($handle, $this->journalExportRow($schema, $entry), ';');
+            }
+
+            fclose($handle);
+        }, $fileName, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+        ]);
+    }
+
+    private function exportJournalXml(JournalTemplate $journal, array $schema, $entries)
+    {
+        $fileName = 'journal_' . ($journal->code ?: $journal->id) . '_' . now()->format('Ymd_His') . '.xml';
+
+        return response()->streamDownload(function () use ($journal, $schema, $entries) {
+            $xml = new \SimpleXMLElement('<?xml version="1.0" encoding="UTF-8"?><journal_export/>');
+            $xml->addChild('journal_code', htmlspecialchars((string) ($journal->code ?: '')));
+            $xml->addChild('journal_name', htmlspecialchars((string) $journal->name));
+            $rowsNode = $xml->addChild('entries');
+
+            foreach ($entries as $entry) {
+                $entryNode = $rowsNode->addChild('entry');
+                foreach ($this->journalExportRowMap($schema, $entry) as $key => $value) {
+                    $entryNode->addChild($this->xmlSafeNodeName($key), htmlspecialchars((string) $value));
+                }
+            }
+
+            echo $xml->asXML();
+        }, $fileName, [
+            'Content-Type' => 'application/xml; charset=UTF-8',
+        ]);
+    }
+
+    private function journalExportHeaders(array $schema): array
+    {
+        return array_keys($this->journalExportBaseRow($schema));
+    }
+
+    private function journalExportRow(array $schema, JournalEntry $entry): array
+    {
+        return array_values($this->journalExportRowMap($schema, $entry));
+    }
+
+    private function journalExportRowMap(array $schema, JournalEntry $entry): array
+    {
+        $row = $this->journalExportBaseRow($schema);
+        $row['entry_date'] = $entry->entry_date ? $entry->entry_date->format('Y-m-d') : '';
+        $row['division_id'] = (string) ($entry->division_id ?? '');
+        $row['division_name'] = (string) ($entry->division->name ?? '');
+        $row['status'] = (string) ($entry->status ?? '');
+
+        foreach ($schema as $field) {
+            $key = $field['key'] ?? null;
+            if (!$key) {
+                continue;
+            }
+
+            $row[$key] = $entry->data[$key] ?? '';
+        }
+
+        return $row;
+    }
+
+    private function journalExportBaseRow(array $schema): array
+    {
+        $row = [
+            'entry_date' => '',
+            'division_id' => '',
+            'division_name' => '',
+            'status' => '',
         ];
-        $printHtmlEntries = $this->renderPrintHtmlEntries(
-            $journal,
-            $schema,
-            $entries,
-            $directoryValues,
-            $printTemplate
-        );
 
-        return view('user.journals.print', compact(
-            'journal',
-            'schema',
-            'entries',
-            'directoryValues',
-            'printTemplate',
-            'printColumns',
-            'printSettings',
-            'printHtmlEntries'
-        ));
+        foreach ($schema as $field) {
+            if (!empty($field['key'])) {
+                $row[$field['key']] = '';
+            }
+        }
+
+        return $row;
+    }
+
+    private function readJournalCsvRows(Request $request): array
+    {
+        $file = $request->file('import_file');
+        $path = $file?->getRealPath();
+
+        if (!$path || !file_exists($path)) {
+            throw ValidationException::withMessages([
+                'import_file' => ['CSV-файл не найден'],
+            ]);
+        }
+
+        $handle = fopen($path, 'r');
+
+        if (!$handle) {
+            throw ValidationException::withMessages([
+                'import_file' => ['Не удалось открыть CSV-файл'],
+            ]);
+        }
+
+        $header = null;
+        $rows = [];
+
+        while (($row = fgetcsv($handle, 0, ';')) !== false) {
+            if ($header === null) {
+                $header = array_map(fn ($item) => trim((string) $item), $row);
+                continue;
+            }
+
+            if (count(array_filter($row, fn ($item) => trim((string) $item) !== '')) === 0) {
+                continue;
+            }
+
+            $rows[] = array_combine($header, array_pad($row, count($header), ''));
+        }
+
+        fclose($handle);
+
+        return $rows;
+    }
+
+    private function readJournalXmlRows(Request $request): array
+    {
+        $file = $request->file('import_file');
+        $path = $file?->getRealPath();
+
+        if (!$path || !file_exists($path)) {
+            throw ValidationException::withMessages([
+                'import_file' => ['XML-файл не найден'],
+            ]);
+        }
+
+        libxml_use_internal_errors(true);
+        $xml = simplexml_load_file($path);
+
+        if (!$xml || !isset($xml->entries)) {
+            throw ValidationException::withMessages([
+                'import_file' => ['Не удалось прочитать XML-файл'],
+            ]);
+        }
+
+        $rows = [];
+
+        foreach ($xml->entries->entry as $entryNode) {
+            $row = [];
+
+            foreach ($entryNode->children() as $child) {
+                $row[$child->getName()] = (string) $child;
+            }
+
+            if (!empty($row)) {
+                $rows[] = $row;
+            }
+        }
+
+        return $rows;
+    }
+
+    private function resolveImportDivisionId(JournalTemplate $journal, array $access, array $row): int
+    {
+        $defaultDivisionId = $this->defaultWritableDivisionId($access);
+
+        if ($defaultDivisionId === null) {
+            abort(403, 'Не удалось определить подразделение для импорта');
+        }
+
+        if (!empty($row['division_id']) && is_numeric($row['division_id'])) {
+            $divisionId = (int) $row['division_id'];
+
+            if ($this->canManageJournalDivision($journal, $divisionId)) {
+                return $divisionId;
+            }
+        }
+
+        $divisionName = trim((string) ($row['division_name'] ?? ''));
+
+        if ($divisionName !== '') {
+            $divisionId = Division::where('name', $divisionName)->value('id');
+            if ($divisionId && $this->canManageJournalDivision($journal, (int) $divisionId)) {
+                return (int) $divisionId;
+            }
+        }
+
+        return (int) $defaultDivisionId;
+    }
+
+    private function extractImportDataRow(array $schema, array $row): array
+    {
+        $data = [];
+
+        foreach ($schema as $field) {
+            $key = $field['key'] ?? null;
+            if (!$key) {
+                continue;
+            }
+
+            if (array_key_exists($key, $row)) {
+                $data[$key] = $row[$key];
+            }
+        }
+
+        return $data;
+    }
+
+    private function xmlSafeNodeName(string $key): string
+    {
+        $safe = preg_replace('/[^a-zA-Z0-9_\-]/', '_', $key);
+
+        if ($safe === '' || preg_match('/^[0-9]/', $safe)) {
+            $safe = 'field_' . $safe;
+        }
+
+        return $safe;
     }
 
     private function resolvePrintTemplate(Request $request, JournalTemplate $journal): ?JournalPrintTemplate
@@ -789,49 +1102,13 @@ class JournalController extends Controller
     {
         $access = $this->checkJournalAccess($journal);
 
-        $query = JournalEntry::with([
+        $query = $this->buildJournalEntriesQuery($request, $journal, $access, [
             'user',
             'division',
             'checker',
             'lastComment.user',
             'rootComments',
-        ])
-            ->where('journal_template_id', $journal->id)
-            ->orderByDesc('id');
-
-        if ($request->boolean('show_deleted')) {
-            $query->onlyTrashed();
-        }
-
-        $this->applyJournalEntryVisibilityScope($query, $journal, $access, $request->input('division_id'));
-
-        if ($request->filled('date_from')) {
-            $query->whereDate('entry_date', '>=', $request->date_from);
-        }
-
-        if ($request->filled('date_to')) {
-            $query->whereDate('entry_date', '<=', $request->date_to);
-        }
-
-        if ($request->filled('status')) {
-            $query->where('status', $request->status);
-        }
-
-        if ($request->filled('search')) {
-            $search = trim($request->search);
-
-            $query->where(function ($q) use ($search) {
-                $q->where('data', 'like', "%{$search}%")
-                    ->orWhereHas('user', function ($uq) use ($search) {
-                        $uq->where('name', 'like', "%{$search}%");
-                    })
-                    ->orWhereHas('division', function ($dq) use ($search) {
-                        $dq->where('name', 'like', "%{$search}%");
-                    });
-            });
-        }
-
-        $this->applySchemaFilters($query, $request, $journal->schema ?? []);
+        ], 'list');
 
         $entries = $query->paginate(10);
         $entries->getCollection()->transform(function (JournalEntry $entry) use ($journal) {
@@ -1255,7 +1532,8 @@ class JournalController extends Controller
         $newValue = $directory->values()->create([
             'value' => $value,
             'data' => $recordData,
-            'sort_order' => 0,
+            'code' => trim((string) $request->input('code', '')) ?: null,
+            'sort_order' => (int) $request->input('sort_order', 0),
             'is_active' => true,
         ]);
 
@@ -1552,7 +1830,7 @@ class JournalController extends Controller
         $result = $this->calculateMissingSqlFields($schema, $result, $journal, null, $divisionId, $userId);
         $this->validateRequiredSqlFields($schema, $result);
         // ВОТ ЗДЕСЬ ПРОВЕРЯЕМ ОГРАНИЧЕНИЯ ИЗ ШАБЛОНА ЖУРНАЛА
-        $this->validateNumericConstraints($schema, $result);
+        $this->validateComparableNumericConstraints($schema, $result);
 
         return $result;
     }
@@ -1716,6 +1994,7 @@ class JournalController extends Controller
             ], 422));
         }
 
+        $sql = $this->normalizeSqlFieldTemplateCodeReferences($sql);
         $bindings = $this->buildSqlFieldBindings($sql, $data, $journal, $entry, $divisionId, $userId);
 
         try {
@@ -1758,6 +2037,34 @@ class JournalController extends Controller
         }
 
         return (bool)preg_match('/^select\b/i', $normalized);
+    }
+
+    private function normalizeSqlFieldTemplateCodeReferences(string $sql): string
+    {
+        $normalized = preg_replace_callback(
+            "/SELECT\\s+id\\s+FROM\\s+journal_templates\\s+WHERE\\s+code\\s*=\\s*'([^']+)'\\s+LIMIT\\s+1/i",
+            function (array $matches) {
+                $code = $matches[1] ?? '';
+
+                if ($code === '' || JournalTemplate::query()->where('code', $code)->exists()) {
+                    return $matches[0];
+                }
+
+                $importedCode = JournalTemplate::query()
+                    ->where('code', 'like', $code . '_import%')
+                    ->orderBy('id')
+                    ->value('code');
+
+                if (!$importedCode) {
+                    return $matches[0];
+                }
+
+                return "SELECT id FROM journal_templates WHERE code = '" . str_replace("'", "''", $importedCode) . "' LIMIT 1";
+            },
+            $sql
+        );
+
+        return is_string($normalized) ? $normalized : $sql;
     }
 
     private function buildSqlFieldBindings(
@@ -1882,6 +2189,129 @@ class JournalController extends Controller
             }
         }
     }
+    private function validateComparableNumericConstraints(array $schema, array $data): void
+    {
+        $fieldsByKey = collect($schema)->keyBy('key');
+        $directoryValuesCache = [];
+
+        foreach ($schema as $field) {
+            $key = $field['key'] ?? null;
+            $label = $field['label'] ?? $key;
+            $type = $field['type'] ?? 'string';
+
+            if (!$key || !in_array($type, ['number', 'calc'], true)) {
+                continue;
+            }
+
+            $validation = $field['validation'] ?? [];
+
+            if (empty($validation)) {
+                continue;
+            }
+
+            $number = $this->resolveComparableNumericConstraintValue($field, $data[$key] ?? null, $directoryValuesCache);
+
+            if ($number === null) {
+                continue;
+            }
+
+            if (isset($validation['min']) && $validation['min'] !== '' && $number < (float) $validation['min']) {
+                abort(response()->json([
+                    'success' => false,
+                    'message' => "Поле «{$label}» должно быть не меньше {$validation['min']}",
+                ], 422));
+            }
+
+            if (isset($validation['max']) && $validation['max'] !== '' && $number > (float) $validation['max']) {
+                abort(response()->json([
+                    'success' => false,
+                    'message' => "Поле «{$label}» должно быть не больше {$validation['max']}",
+                ], 422));
+            }
+
+            if (!empty($validation['greater_than_field'])) {
+                $otherKey = $validation['greater_than_field'];
+                $otherField = $fieldsByKey->get($otherKey);
+                $otherLabel = $otherField['label'] ?? $otherKey;
+                $otherNumber = $otherField
+                    ? $this->resolveComparableNumericConstraintValue($otherField, $data[$otherKey] ?? null, $directoryValuesCache)
+                    : null;
+
+                if ($otherNumber !== null && $number <= $otherNumber) {
+                    abort(response()->json([
+                        'success' => false,
+                        'message' => "Поле «{$label}» должно быть больше поля «{$otherLabel}»",
+                    ], 422));
+                }
+            }
+
+            if (!empty($validation['less_than_field'])) {
+                $otherKey = $validation['less_than_field'];
+                $otherField = $fieldsByKey->get($otherKey);
+                $otherLabel = $otherField['label'] ?? $otherKey;
+                $otherNumber = $otherField
+                    ? $this->resolveComparableNumericConstraintValue($otherField, $data[$otherKey] ?? null, $directoryValuesCache)
+                    : null;
+
+                if ($otherNumber !== null && $number >= $otherNumber) {
+                    abort(response()->json([
+                        'success' => false,
+                        'message' => "Поле «{$label}» должно быть меньше поля «{$otherLabel}»",
+                    ], 422));
+                }
+            }
+        }
+    }
+
+    private function resolveComparableNumericConstraintValue(array $field, $value, array &$directoryValuesCache): ?float
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        if (is_numeric($value)) {
+            return (float) $value;
+        }
+
+        if (($field['type'] ?? 'string') !== 'directory') {
+            return null;
+        }
+
+        $directoryId = (int) ($field['directory_id'] ?? 0);
+        $selectedId = (int) $value;
+
+        if ($directoryId <= 0 || $selectedId <= 0) {
+            return null;
+        }
+
+        $cacheKey = $directoryId . ':' . $selectedId;
+
+        if (!array_key_exists($cacheKey, $directoryValuesCache)) {
+            $directoryValuesCache[$cacheKey] = DirectoryValue::query()
+                ->whereKey($selectedId)
+                ->where('directory_id', $directoryId)
+                ->first();
+        }
+
+        $directoryValue = $directoryValuesCache[$cacheKey];
+
+        if (!$directoryValue) {
+            return null;
+        }
+
+        $displayValue = $this->getDirectoryDisplayValue($directoryValue, $field);
+
+        if (is_numeric($displayValue)) {
+            return (float) $displayValue;
+        }
+
+        if (is_numeric($directoryValue->value)) {
+            return (float) $directoryValue->value;
+        }
+
+        return null;
+    }
+
     public function comments(JournalTemplate $journal, JournalEntry $entry)
     {
         $this->checkJournalAccess($journal);
