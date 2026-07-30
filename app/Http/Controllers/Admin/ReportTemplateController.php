@@ -8,6 +8,7 @@ use App\Models\JournalTemplate;
 use App\Models\ReportTemplate;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -275,14 +276,31 @@ class ReportTemplateController extends Controller
         }
 
         $validated['params_schema'] = $schema;
-        $validated['print_settings'] = [
-            'orientation' => $validated['print_settings']['orientation'] ?? 'portrait',
-            'title' => trim((string) ($validated['print_settings']['title'] ?? '')),
-            'body_html' => trim((string) ($validated['print_settings']['body_html'] ?? '')),
-        ];
+
+        if ($this->supportsPrintSettings()) {
+            $validated['print_settings'] = [
+                'orientation' => $validated['print_settings']['orientation'] ?? 'portrait',
+                'title' => trim((string) ($validated['print_settings']['title'] ?? '')),
+                'body_html' => trim((string) ($validated['print_settings']['body_html'] ?? '')),
+            ];
+        } else {
+            unset($validated['print_settings']);
+        }
+
         $validated['is_active'] = $request->boolean('is_active');
 
         return $validated;
+    }
+
+    private function supportsPrintSettings(): bool
+    {
+        static $supportsPrintSettings = null;
+
+        if ($supportsPrintSettings !== null) {
+            return $supportsPrintSettings;
+        }
+
+        return $supportsPrintSettings = Schema::hasColumn('report_templates', 'print_settings');
     }
 
     private function isSafeSelectSql(string $sql): bool

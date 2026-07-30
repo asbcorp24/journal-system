@@ -137,7 +137,7 @@
                                             <label class="form-label">Режим</label>
                                             <select id="builderMode" class="form-select">
                                                 <option value="table">Таблица записей</option>
-                                                <option value="summary">Группировка + сумма</option>
+                                                <option value="summary">Группировка + расчёт</option>
                                             </select>
                                         </div>
 
@@ -157,8 +157,23 @@
                                         </div>
 
                                         <div class="col-md-6 builder-summary-block d-none">
-                                            <label class="form-label">Суммировать по полю</label>
+                                            <label class="form-label">Расчётная функция</label>
+                                            <select id="builderAggregateFunction" class="form-select">
+                                                <option value="sum">SUM (сумма)</option>
+                                                <option value="avg">AVG (среднее)</option>
+                                                <option value="min">MIN (минимум)</option>
+                                                <option value="max">MAX (максимум)</option>
+                                                <option value="count">COUNT (количество строк)</option>
+                                                <option value="count_distinct">COUNT DISTINCT</option>
+                                            </select>
+                                        </div>
+
+                                        <div class="col-md-6 builder-summary-block d-none">
+                                            <label class="form-label">Поле для расчёта</label>
                                             <select id="builderSumField" class="form-select"></select>
+                                            <div class="text-secondary small mt-1" id="builderAggregateHint">
+                                                Для SUM, AVG, MIN и MAX лучше выбирать числовое поле.
+                                            </div>
                                         </div>
                                     </div>
 
@@ -1082,6 +1097,10 @@ ORDER BY je.entry_date DESC, je.id DESC
             initSearchableSelects(document.getElementById('reportModal'));
         });
 
+        $('#builderAggregateFunction').on('change', function () {
+            renderBuilderSummaryOptions();
+        });
+
         $('#reportForm').on('submit', function (e) {
             e.preventDefault();
 
@@ -1216,6 +1235,188 @@ ORDER BY je.entry_date DESC, je.id DESC
                 loadReports(page);
             }
         });
+
+        function getSystemBuilderColumns() {
+            return [
+                { key: 'entry_id', label: 'ID записи', type: 'number', sql: 'je.id', sql_numeric: 'je.id' },
+                { key: 'entry_date', label: 'Дата', type: 'date', sql: 'je.entry_date' },
+                { key: 'division_name', label: 'Подразделение', type: 'text', sql: 'd.name' },
+                { key: 'user_name', label: 'Добавил', type: 'text', sql: 'u.name' },
+                { key: 'status', label: 'Статус', type: 'text', sql: 'je.status' }
+            ];
+        }
+
+        function getAggregateFunctions() {
+            return {
+                sum: { label: 'SUM', needsField: true, numericOnly: true },
+                avg: { label: 'AVG', needsField: true, numericOnly: true },
+                min: { label: 'MIN', needsField: true, numericOnly: false },
+                max: { label: 'MAX', needsField: true, numericOnly: false },
+                count: { label: 'COUNT', needsField: false, numericOnly: false },
+                count_distinct: { label: 'COUNT DISTINCT', needsField: true, numericOnly: false }
+            };
+        }
+
+        function renderBuilderSummaryOptions() {
+            let columns = getAllBuilderColumns();
+            let aggregateFunction = $('#builderAggregateFunction').val() || 'sum';
+            let functionMeta = getAggregateFunctions()[aggregateFunction] || getAggregateFunctions().sum;
+            let groupHtml = '<option value="">Выберите поле</option>';
+            let sumHtml = `<option value="">${functionMeta.numericOnly ? 'Выберите числовое поле' : 'Выберите поле'}</option>`;
+
+            columns.forEach(function (column) {
+                groupHtml += `<option value="${escapeHtml(column.key)}">${escapeHtml(column.label)}</option>`;
+
+                if (!functionMeta.numericOnly || ['number', 'calc'].includes(column.type)) {
+                    sumHtml += `<option value="${escapeHtml(column.key)}">${escapeHtml(column.label)}</option>`;
+                }
+            });
+
+            $('#builderGroupField').html(groupHtml);
+            $('#builderSumField').html(sumHtml);
+            $('#builderSumField').prop('disabled', !functionMeta.needsField);
+
+            let hint = 'Для SUM, AVG, MIN и MAX можно использовать системные и пользовательские поля.';
+            if (aggregateFunction === 'count') {
+                hint = 'COUNT считает количество строк в каждой группе и не требует выбора поля.';
+            } else if (aggregateFunction === 'count_distinct') {
+                hint = 'COUNT DISTINCT считает количество уникальных значений выбранного поля.';
+            } else if (aggregateFunction === 'avg') {
+                hint = 'AVG работает только по числовым полям.';
+            }
+
+            $('#builderAggregateHint').text(hint);
+        }
+
+        function syncBuilderMode() {
+            let isSummary = $('#builderMode').val() === 'summary';
+            $('.builder-table-block').toggleClass('d-none', isSummary);
+            $('.builder-summary-block').toggleClass('d-none', !isSummary);
+
+            if (isSummary) {
+                renderBuilderSummaryOptions();
+            }
+        }
+
+        function generateSqlFromBuilder() {
+            let journal = getSelectedJournal();
+
+            if (!journal) {
+                showToast('Выберите журнал для конструктора', 'warning');
+                return;
+            }
+
+            let allColumns = getAllBuilderColumns();
+            let columnsByKey = {};
+            allColumns.forEach(function (column) {
+                columnsByKey[column.key] = column;
+            });
+
+            let whereSql = `
+WHERE je.journal_template_id = ${Number(journal.id)}
+  AND (:date_from IS NULL OR je.entry_date >= :date_from)
+  AND (:date_to IS NULL OR je.entry_date <= :date_to)
+  AND (:division_id IS NULL OR je.division_id = :division_id)
+`.trim();
+
+            let fromSql = `
+FROM journal_entries je
+LEFT JOIN divisions d ON d.id = je.division_id
+LEFT JOIN users u ON u.id = je.user_id
+`.trim();
+
+            if ($('#builderMode').val() === 'summary') {
+                let groupKey = $('#builderGroupField').val();
+                let aggregateFunction = $('#builderAggregateFunction').val() || 'sum';
+                let aggregateFieldKey = $('#builderSumField').val();
+                let groupColumn = columnsByKey[groupKey];
+                let aggregateColumn = columnsByKey[aggregateFieldKey];
+                let functionMeta = getAggregateFunctions()[aggregateFunction] || getAggregateFunctions().sum;
+
+                if (!groupColumn) {
+                    showToast('Выберите поле группировки', 'warning');
+                    return;
+                }
+
+                if (functionMeta.needsField && !aggregateColumn) {
+                    showToast('Выберите поле для расчётной функции', 'warning');
+                    return;
+                }
+
+                if (functionMeta.numericOnly && !['number', 'calc'].includes(aggregateColumn?.type || '')) {
+                    showToast('Для этой функции нужно числовое поле', 'warning');
+                    return;
+                }
+
+                let groupExpr = groupColumn.sql || 'NULL';
+                let aggregateExpr = 'COUNT(*)';
+
+                if (aggregateFunction === 'count_distinct') {
+                    aggregateExpr = `COUNT(DISTINCT ${aggregateColumn.sql || 'NULL'})`;
+                } else if (aggregateFunction === 'count') {
+                    aggregateExpr = 'COUNT(*)';
+                } else if (aggregateFunction === 'sum') {
+                    aggregateExpr = `SUM(${aggregateColumn.sql_numeric || aggregateColumn.sql || '0'})`;
+                } else if (aggregateFunction === 'avg') {
+                    aggregateExpr = `AVG(${aggregateColumn.sql_numeric || aggregateColumn.sql || '0'})`;
+                } else if (aggregateFunction === 'min') {
+                    aggregateExpr = `MIN(${aggregateColumn.sql || 'NULL'})`;
+                } else if (aggregateFunction === 'max') {
+                    aggregateExpr = `MAX(${aggregateColumn.sql || 'NULL'})`;
+                }
+
+                let sql = `
+SELECT
+    COALESCE(${groupExpr}, 'Без значения') AS group_value,
+    ${aggregateExpr} AS total_value,
+    COUNT(*) AS entries_count
+${fromSql}
+${whereSql}
+GROUP BY COALESCE(${groupExpr}, '')
+ORDER BY total_value DESC, group_value ASC
+`.trim();
+
+                $('#sqlQuery').val(sql);
+
+                if (!$('#reportName').val().trim()) {
+                    let sourceLabel = aggregateColumn ? (aggregateColumn.label || aggregateColumn.key) : 'строки';
+                    $('#reportName').val(`${functionMeta.label}: ${sourceLabel} / ${journal.name}`);
+                }
+            } else {
+                let selectedKeys = $('.builder-column-checkbox:checked').map(function () {
+                    return $(this).val();
+                }).get();
+
+                if (!selectedKeys.length) {
+                    showToast('Выберите хотя бы одну колонку отчёта', 'warning');
+                    return;
+                }
+
+                let selectSql = selectedKeys.map(function (key) {
+                    let column = columnsByKey[key];
+                    let expr = column ? column.sql : null;
+                    let alias = column ? column.key : key;
+                    return `${expr} AS "${alias}"`;
+                }).filter(Boolean).join(",\n    ");
+
+                let sql = `
+SELECT
+    ${selectSql}
+${fromSql}
+${whereSql}
+ORDER BY je.entry_date DESC, je.id DESC
+`.trim();
+
+                $('#sqlQuery').val(sql);
+
+                if (!$('#reportName').val().trim()) {
+                    $('#reportName').val(`Журнал: ${journal.name}`);
+                }
+            }
+
+            applyGeneratedParamsSchema(buildAutoParamsSchema());
+            showToast('SQL и параметры собраны', 'success');
+        }
 
         renderBuilder();
         renderParams();
