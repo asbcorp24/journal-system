@@ -519,6 +519,10 @@
                 <div class="modal-body">
                     <div class="d-flex justify-content-between align-items-center mb-3">
                         <div class="text-secondary small">Варианты выбора с набором простых полей для справочников.</div>
+                        <button type="button" class="btn btn-outline-light btn-sm" id="importTemplateListBtn">
+                            <i class="bi bi-upload"></i>
+                            Import
+                        </button>
                         <button type="button" class="btn btn-primary btn-sm" id="addTemplateListBtn">
                             <i class="bi bi-plus-lg"></i>
                             Добавить список
@@ -594,6 +598,28 @@
         </div>
     </div>
 
+
+    <div class="modal fade" id="templateListImportModal" tabindex="-1">
+        <div class="modal-dialog">
+            <form class="modal-content" id="templateListImportForm" enctype="multipart/form-data">
+                <div class="modal-header">
+                    <h5 class="modal-title">Import Template List</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">JSON file</label>
+                        <input type="file" class="form-control" name="template_file" accept=".json,application/json" required>
+                    </div>
+                    <div class="small text-secondary">Supported format: exported template list JSON.</div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Import</button>
+                </div>
+            </form>
+        </div>
+    </div>
 @endsection
 
 @push('scripts')
@@ -606,6 +632,7 @@
         let directoryScriptModal = new bootstrap.Modal(document.getElementById('directoryScriptModal'));
         let templateListsModal = new bootstrap.Modal(document.getElementById('templateListsModal'));
         let templateListEditorModal = new bootstrap.Modal(document.getElementById('templateListEditorModal'));
+        let templateListImportModal = new bootstrap.Modal(document.getElementById('templateListImportModal'));
 
         let currentDirectoryPage = 1;
         let currentValuePage = 1;
@@ -1117,6 +1144,7 @@
                         <td>${Array.isArray(item.items) ? item.items.length : 0}</td>
                         <td>${item.creator_name ? escapeHtml(item.creator_name) : '<span class="text-secondary">-</span>'}</td>
                         <td class="text-end">
+                            <button type="button" class="btn btn-sm btn-outline-light export-template-list" data-id="${item.id}" title="Export"><i class="bi bi-download"></i></button>
                             <button type="button" class="btn btn-sm btn-outline-info edit-template-list" data-id="${item.id}"><i class="bi bi-pencil"></i></button>
                             <button type="button" class="btn btn-sm btn-outline-danger delete-template-list" data-id="${item.id}"><i class="bi bi-trash"></i></button>
                         </td>
@@ -3114,6 +3142,11 @@
             templateListEditorModal.show();
         });
 
+        $('#importTemplateListBtn').on('click', function () {
+            $('#templateListImportForm')[0].reset();
+            templateListImportModal.show();
+        });
+
         $('#addTemplateListItemBtn').on('click', function () {
             syncTemplateListItemsFromDom();
             addTemplateListItem();
@@ -3211,6 +3244,11 @@
             });
         });
 
+        $(document).on('click', '.export-template-list', function () {
+            let id = $(this).data('id');
+            window.open(directoryRoute('templateListExport', id), '_blank');
+        });
+
         $('#templateListEditorForm').on('submit', function (e) {
             e.preventDefault();
 
@@ -3224,6 +3262,28 @@
                 success: function (response) {
                     showToast(response.message, 'success');
                     templateListEditorModal.hide();
+                    loadTemplateLists();
+                },
+                error: function (xhr) {
+                    showAjaxErrors(xhr);
+                }
+            });
+        });
+
+        $('#templateListImportForm').on('submit', function (e) {
+            e.preventDefault();
+
+            let formData = new FormData(this);
+
+            $.ajax({
+                url: directoryRoute('templateListsImport'),
+                method: 'POST',
+                data: formData,
+                processData: false,
+                contentType: false,
+                success: function (response) {
+                    showToast(response.message, 'success');
+                    templateListImportModal.hide();
                     loadTemplateLists();
                 },
                 error: function (xhr) {

@@ -654,6 +654,74 @@ class DirectoryController extends Controller
         ]);
     }
 
+    public function templateListExport(DirectoryTemplateList $templateList)
+    {
+        $this->authorizePageAccess();
+        $templateList->load('creator');
+
+        $payload = [
+            'kind' => 'directory_template_list',
+            'version' => 1,
+            'exported_at' => now()->toIso8601String(),
+            'template_list' => [
+                'name' => $templateList->name,
+                'code' => $templateList->code,
+                'description' => $templateList->description,
+                'items' => DirectorySchema::serializeTemplateList($templateList)['items'] ?? [],
+            ],
+        ];
+
+        $fileName = 'directory_template_list_' . Str::slug($templateList->code ?: $templateList->name, '_') . '.json';
+
+        return response()->streamDownload(function () use ($payload) {
+            echo json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        }, $fileName, [
+            'Content-Type' => 'application/json; charset=UTF-8',
+        ]);
+    }
+
+    public function templateListImport(Request $request)
+    {
+        $this->authorizePageAccess();
+
+        $request->validate([
+            'template_file' => ['required', 'file', 'mimes:json,txt'],
+        ]);
+
+        $importPayload = $this->readImportPayload($request, 'directory_template_list');
+        $templateListData = $importPayload['template_list'] ?? [];
+
+        $validated = validator([
+            'name' => $this->generateImportedTemplateListName((string) ($templateListData['name'] ?? 'РЎРїРёСЃРѕРє С€Р°Р±Р»РѕРЅРѕРІ')),
+            'code' => $this->generateImportedTemplateListCode($templateListData['code'] ?? null),
+            'description' => $templateListData['description'] ?? null,
+            'items' => $templateListData['items'] ?? [],
+        ], [
+            'name' => ['required', 'string', 'max:255'],
+            'code' => ['nullable', 'string', 'max:255', 'unique:directory_template_lists,code'],
+            'description' => ['nullable', 'string'],
+            'items' => ['nullable', 'array'],
+        ])->validate();
+
+        $payload = DirectorySchema::validateTemplateListDefinition($validated);
+
+        $templateList = DirectoryTemplateList::query()->create([
+            'name' => $payload['name'],
+            'code' => $payload['code'],
+            'description' => $payload['description'],
+            'items' => $payload['items'],
+            'created_by' => session('user_id'),
+        ]);
+
+        $templateList->load('creator');
+
+        return response()->json([
+            'success' => true,
+            'message' => 'РЎРїРёСЃРѕРє С€Р°Р±Р»РѕРЅРѕРІ РёРјРїРѕСЂС‚РёСЂРѕРІР°РЅ',
+            'item' => DirectorySchema::serializeTemplateList($templateList),
+        ]);
+    }
+
     public function scriptStore(Request $request, Directory $directory)
     {
         $this->authorizeDirectoryAccess($directory);
@@ -1403,6 +1471,7 @@ class DirectoryController extends Controller
             'directoryValues' => url('/admin/directories/__ID__/values'),
             'directoryScripts' => url('/admin/directories/__ID__/scripts'),
             'templateLists' => route('admin.directories.template-lists.list'),
+            'templateListsImport' => route('admin.directories.template-lists.import'),
             'directoryImportCsv' => url('/admin/directories/__ID__/import-csv'),
             'directoryPrint' => url('/admin/directories/__ID__/print'),
             'directoryBarcodes' => url('/admin/directories/__ID__/barcodes'),
@@ -1410,6 +1479,7 @@ class DirectoryController extends Controller
             'valueRestore' => url('/admin/directory-values/__ID__/restore'),
             'script' => url('/admin/directory-scripts/__ID__'),
             'templateList' => url('/admin/directory-template-lists/__ID__'),
+            'templateListExport' => url('/admin/directory-template-lists/__ID__/export'),
         ];
     }
 
@@ -1596,6 +1666,39 @@ class DirectoryController extends Controller
         $suffix = 2;
 
         while (Directory::where('code', $candidate)->exists()) {
+            $candidate = $baseCode . '_import_' . $suffix;
+            $suffix++;
+        }
+
+        return $candidate;
+    }
+
+    private function generateImportedTemplateListName(string $baseName): string
+    {
+        $baseName = trim($baseName) !== '' ? trim($baseName) : 'РЎРїРёСЃРѕРє С€Р°Р±Р»РѕРЅРѕРІ';
+        $candidate = $baseName . ' (РёРјРїРѕСЂС‚)';
+        $suffix = 2;
+
+        while (DirectoryTemplateList::where('name', $candidate)->exists()) {
+            $candidate = $baseName . ' (РёРјРїРѕСЂС‚ ' . $suffix . ')';
+            $suffix++;
+        }
+
+        return $candidate;
+    }
+
+    private function generateImportedTemplateListCode(?string $baseCode): ?string
+    {
+        $baseCode = trim((string) $baseCode);
+
+        if ($baseCode === '') {
+            return null;
+        }
+
+        $candidate = $baseCode . '_import';
+        $suffix = 2;
+
+        while (DirectoryTemplateList::where('code', $candidate)->exists()) {
             $candidate = $baseCode . '_import_' . $suffix;
             $suffix++;
         }

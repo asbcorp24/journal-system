@@ -349,6 +349,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::post('/directories/import-template', [DirectoryController::class, 'importTemplate'])->name('directories.import-template');
         Route::get('/directory-template-lists', [DirectoryController::class, 'templateListsList'])->name('directories.template-lists.list');
         Route::post('/directory-template-lists', [DirectoryController::class, 'templateListStore'])->name('directories.template-lists.store');
+        Route::post('/directory-template-lists/import', [DirectoryController::class, 'templateListImport'])->name('directories.template-lists.import');
 
         Route::get('/directories/{directory}/values', [DirectoryController::class, 'valuesList'])->name('directories.values.list');
         Route::post('/directories/{directory}/values', [DirectoryController::class, 'valueStore'])->name('directories.values.store');
@@ -376,6 +377,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('/directory-template-lists/{templateList}', [DirectoryController::class, 'templateListShow'])->name('directories.template-lists.show');
         Route::post('/directory-template-lists/{templateList}', [DirectoryController::class, 'templateListUpdate'])->name('directories.template-lists.update');
         Route::delete('/directory-template-lists/{templateList}', [DirectoryController::class, 'templateListDestroy'])->name('directories.template-lists.destroy');
+        Route::get('/directory-template-lists/{templateList}/export', [DirectoryController::class, 'templateListExport'])->name('directories.template-lists.export');
 
         Route::get('/directories/{directory}', [DirectoryController::class, 'show'])->name('directories.show');
         Route::post('/directories/{directory}', [DirectoryController::class, 'update'])->name('directories.update');
