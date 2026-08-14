@@ -23,6 +23,13 @@ class Directory extends Model
         return $this->hasMany(DirectoryValue::class);
     }
 
+    public function scripts()
+    {
+        return $this->hasMany(DirectoryScript::class)
+            ->orderBy('sort_order')
+            ->orderBy('name');
+    }
+
     public function divisions()
     {
         return $this->belongsToMany(Division::class, 'directory_division');

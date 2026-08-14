@@ -2,6 +2,7 @@
 use App\Http\Controllers\Admin\AuthController;
 use App\Http\Controllers\Admin\DatabaseMaintenanceController;
 use App\Http\Controllers\Admin\DirectoryController;
+use App\Http\Controllers\Admin\SavedFilterController as AdminSavedFilterController;
 use App\Http\Controllers\Admin\DivisionController;
 use App\Http\Controllers\Admin\JournalTemplateController;
 use App\Http\Controllers\Admin\JournalPrintTemplateController;
@@ -12,6 +13,7 @@ use App\Http\Controllers\User\ChartController;
 use App\Http\Controllers\User\ChatController;
 use App\Http\Controllers\User\DashboardController;
 use App\Http\Controllers\User\DirectoryController as UserDirectoryController;
+use App\Http\Controllers\User\SavedFilterController;
 use App\Http\Controllers\User\DirectoryTemplateController;
 use App\Http\Controllers\User\FavoriteController;
 use App\Http\Controllers\User\JournalController;
@@ -38,6 +40,14 @@ Route::middleware('user.auth')->group(function () {
     Route::get('/leader-dashboard', [DashboardController::class, 'leader'])->name('user.leader-dashboard');
     Route::get('/journals/{journal}', [JournalController::class, 'show'])
         ->name('user.journals.show');
+    Route::get('/journals/{journal}/filters', [SavedFilterController::class, 'journalIndex'])
+        ->name('user.journals.filters.index');
+    Route::post('/journals/{journal}/filters', [SavedFilterController::class, 'storeJournal'])
+        ->name('user.journals.filters.store');
+    Route::post('/journals/{journal}/filters/{filter}', [SavedFilterController::class, 'updateJournal'])
+        ->name('user.journals.filters.update');
+    Route::delete('/journals/{journal}/filters/{filter}', [SavedFilterController::class, 'destroyJournal'])
+        ->name('user.journals.filters.destroy');
 
     Route::get('/journals/{journal}/entries', [JournalController::class, 'list'])
         ->name('user.journals.entries.list');
@@ -166,6 +176,14 @@ Route::middleware('user.auth')->group(function () {
 
     Route::get('/directories', [UserDirectoryController::class, 'index'])
         ->name('user.directories.index');
+    Route::get('/directories/{directory}/filters', [SavedFilterController::class, 'directoryIndex'])
+        ->name('user.directories.filters.index');
+    Route::post('/directories/{directory}/filters', [SavedFilterController::class, 'storeDirectory'])
+        ->name('user.directories.filters.store');
+    Route::post('/directories/{directory}/filters/{filter}', [SavedFilterController::class, 'updateDirectory'])
+        ->name('user.directories.filters.update');
+    Route::delete('/directories/{directory}/filters/{filter}', [SavedFilterController::class, 'destroyDirectory'])
+        ->name('user.directories.filters.destroy');
 
     Route::post('/favorites/toggle', [FavoriteController::class, 'toggle'])
         ->name('user.favorites.toggle');
@@ -195,7 +213,12 @@ Route::middleware('user.auth')->group(function () {
         ->name('user.directory-values.update');
 
     Route::delete('/directory-values/{value}', [UserDirectoryController::class, 'destroyValue'])
+        ->withTrashed()
         ->name('user.directory-values.destroy');
+
+    Route::post('/directory-values/{value}/restore', [UserDirectoryController::class, 'restoreValue'])
+        ->withTrashed()
+        ->name('user.directory-values.restore');
 
     Route::get('/directory-templates', [DirectoryTemplateController::class, 'index'])
         ->name('user.directory-templates.index');
@@ -324,16 +347,35 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('/directories/list', [DirectoryController::class, 'list'])->name('directories.list');
         Route::post('/directories', [DirectoryController::class, 'store'])->name('directories.store');
         Route::post('/directories/import-template', [DirectoryController::class, 'importTemplate'])->name('directories.import-template');
+        Route::get('/directory-template-lists', [DirectoryController::class, 'templateListsList'])->name('directories.template-lists.list');
+        Route::post('/directory-template-lists', [DirectoryController::class, 'templateListStore'])->name('directories.template-lists.store');
 
         Route::get('/directories/{directory}/values', [DirectoryController::class, 'valuesList'])->name('directories.values.list');
         Route::post('/directories/{directory}/values', [DirectoryController::class, 'valueStore'])->name('directories.values.store');
+        Route::get('/directories/{directory}/filters', [AdminSavedFilterController::class, 'directoryIndex'])->name('directories.filters.index');
+        Route::post('/directories/{directory}/filters', [AdminSavedFilterController::class, 'storeDirectory'])->name('directories.filters.store');
+        Route::post('/directories/{directory}/filters/{filter}', [AdminSavedFilterController::class, 'updateDirectory'])->name('directories.filters.update');
+        Route::delete('/directories/{directory}/filters/{filter}', [AdminSavedFilterController::class, 'destroyDirectory'])->name('directories.filters.destroy');
+        Route::get('/directories/{directory}/scripts', [DirectoryController::class, 'scriptsList'])->name('directories.scripts.list');
+        Route::post('/directories/{directory}/scripts', [DirectoryController::class, 'scriptStore'])->name('directories.scripts.store');
         Route::post('/directories/{directory}/import-csv', [DirectoryController::class, 'importCsv'])->name('directories.import.csv');
         Route::get('/directories/{directory}/print', [DirectoryController::class, 'print'])->name('directories.print');
         Route::get('/directories/{directory}/barcodes', [DirectoryController::class, 'printBarcodes'])->name('directories.barcodes');
 
         Route::get('/directory-values/{value}', [DirectoryController::class, 'valueShow'])->name('directory-values.show');
         Route::post('/directory-values/{value}', [DirectoryController::class, 'valueUpdate'])->name('directory-values.update');
-        Route::delete('/directory-values/{value}', [DirectoryController::class, 'valueDestroy'])->name('directory-values.destroy');
+        Route::delete('/directory-values/{value}', [DirectoryController::class, 'valueDestroy'])
+            ->withTrashed()
+            ->name('directory-values.destroy');
+        Route::post('/directory-values/{value}/restore', [DirectoryController::class, 'valueRestore'])
+            ->withTrashed()
+            ->name('directory-values.restore');
+        Route::get('/directory-scripts/{script}', [DirectoryController::class, 'scriptShow'])->name('directory-scripts.show');
+        Route::post('/directory-scripts/{script}', [DirectoryController::class, 'scriptUpdate'])->name('directory-scripts.update');
+        Route::delete('/directory-scripts/{script}', [DirectoryController::class, 'scriptDestroy'])->name('directory-scripts.destroy');
+        Route::get('/directory-template-lists/{templateList}', [DirectoryController::class, 'templateListShow'])->name('directories.template-lists.show');
+        Route::post('/directory-template-lists/{templateList}', [DirectoryController::class, 'templateListUpdate'])->name('directories.template-lists.update');
+        Route::delete('/directory-template-lists/{templateList}', [DirectoryController::class, 'templateListDestroy'])->name('directories.template-lists.destroy');
 
         Route::get('/directories/{directory}', [DirectoryController::class, 'show'])->name('directories.show');
         Route::post('/directories/{directory}', [DirectoryController::class, 'update'])->name('directories.update');

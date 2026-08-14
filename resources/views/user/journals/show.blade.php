@@ -56,7 +56,14 @@
     <div id="journalWorkspace">
     <div class="card mb-4">
         <div class="card-body">
-            <div class="row g-3">
+            <div class="d-flex justify-content-between align-items-center gap-2 mb-3">
+                <div class="fw-semibold">Фильтры журнала</div>
+                <button type="button" class="btn btn-sm btn-outline-light" id="toggleJournalFiltersBtn">
+                    <i class="bi bi-funnel"></i>
+                    Показать фильтры
+                </button>
+            </div>
+            <div class="row g-3 d-none" id="journalFiltersPanel">
                 <div class="col-md-3">
                     <label class="form-label">Дата от</label>
                     <input type="date" id="dateFrom" class="form-control">
@@ -89,6 +96,22 @@
                         </select>
                     </div>
                 @endif
+
+                <div class="col-md-4">
+                    <label class="form-label">Сохранённый фильтр</label>
+                    <select id="savedJournalFilterSelect" class="form-select">
+                        <option value="">Все поля</option>
+                        @foreach($savedFilters as $savedFilter)
+                            <option value="{{ $savedFilter['id'] }}">{{ $savedFilter['name'] }}</option>
+                        @endforeach
+                    </select>
+                </div>
+
+                <div class="col-md-2 d-flex align-items-end">
+                    <a href="{{ route('user.journals.filters.index', $journal) }}" class="btn btn-outline-warning w-100">
+                        Конструктор
+                    </a>
+                </div>
 
                 <div class="col-12">
                     <div id="fieldFiltersContainer" class="row g-3"></div>
@@ -463,6 +486,7 @@
         const directoryValues = @json($directoryValues);
         const directoryQrValues = @json($directoryQrValues);
         const directoryDefinitions = @json($directories);
+        const savedJournalFilters = @json($savedFilters);
         const userRole = "{{ session('user_role') }}";
         const canManageJournal = @json($canManageJournal);
         const canManageDirectoryValues = userRole !== 'worker';
@@ -476,8 +500,10 @@
         let journalDirectoryValueModalDirectory = null;
         let journalDirectoryValueModalStack = [];
         let currentPage = 1;
+        let currentSavedJournalFilterId = '';
         let journalFullscreen = false;
         let entryModalFullscreen = false;
+        let journalFiltersVisible = false;
 
         function statusBadge(status) {
             if (status === 'approved') {
@@ -545,6 +571,56 @@
             $('#toggleEntryModalFullscreenBtn').html(entryModalFullscreen
                 ? '<i class="bi bi-fullscreen-exit"></i>'
                 : '<i class="bi bi-arrows-fullscreen"></i>');
+        }
+
+        function updateJournalFiltersButton() {
+            const btn = $('#toggleJournalFiltersBtn');
+
+            if (!btn.length) {
+                return;
+            }
+
+            let activeCount = getActiveJournalFiltersCount();
+            let badge = activeCount > 0
+                ? ` <span class="badge bg-info text-dark ms-1">${activeCount}</span>`
+                : '';
+
+            btn.html(journalFiltersVisible
+                ? `<i class="bi bi-funnel-fill"></i> Скрыть фильтры${badge}`
+                : `<i class="bi bi-funnel"></i> Показать фильтры${badge}`);
+        }
+
+        function getActiveJournalFiltersCount() {
+            let count = 0;
+            let fieldFilters = collectFieldFilters();
+
+            count += Object.keys(fieldFilters).length;
+
+            if ($('#dateFrom').val()) {
+                count += 1;
+            }
+
+            if ($('#dateTo').val()) {
+                count += 1;
+            }
+
+            if ($('#statusFilter').val()) {
+                count += 1;
+            }
+
+            if ($('#divisionFilter').length && $('#divisionFilter').val()) {
+                count += 1;
+            }
+
+            if ($('#searchInput').val()) {
+                count += 1;
+            }
+
+            if ($('#showDeletedFilter').is(':checked')) {
+                count += 1;
+            }
+
+            return count;
         }
 
         function getFieldLabel(key) {
@@ -1032,14 +1108,150 @@
             return escapeHtml(value);
         }
 
-        function getFilterableFields() {
-            return schema.filter(function (field) {
+        function getFilterableFields(visibleKeys = null) {
+            let fields = schema.filter(function (field) {
                 return !!field.filterable;
+            });
+
+            if (!Array.isArray(visibleKeys) || !visibleKeys.length) {
+                return fields;
+            }
+
+            return fields.filter(function (field) {
+                return visibleKeys.includes(String(field.key));
             });
         }
 
-        function renderFieldFilters() {
-            let fields = getFilterableFields();
+        function supportsAdvancedJournalFilter(field) {
+            return ['text', 'number', 'date', 'time', 'directory_text', 'calc'].includes(field.type);
+        }
+
+        function normalizeJournalPresetFilterValue(rawValue) {
+            if (rawValue && typeof rawValue === 'object' && !Array.isArray(rawValue)) {
+                return {
+                    operator: String(rawValue.operator || '').trim() || 'eq',
+                    value: rawValue.value ?? '',
+                    value_to: rawValue.value_to ?? '',
+                };
+            }
+
+            return {
+                operator: 'eq',
+                value: rawValue ?? '',
+                value_to: '',
+            };
+        }
+
+        function renderJournalFilterOperatorControl(field, operator = 'eq') {
+            if (!supportsAdvancedJournalFilter(field)) {
+                return '';
+            }
+
+            let options = [
+                {value: 'eq', label: '='},
+                {value: 'gt', label: '>'},
+                {value: 'lt', label: '<'},
+                {value: 'neq', label: '<>'},
+                {value: 'between', label: 'between'},
+            ];
+
+            if (field.type !== 'number' && field.type !== 'date' && field.type !== 'time' && field.type !== 'calc') {
+                options.push({value: 'contains', label: 'contains'});
+            }
+
+            let html = `<select class="form-select form-select-sm journal-field-filter-operator mb-2" data-key="${escapeHtml(field.key)}">`;
+
+            options.forEach(function (item) {
+                html += `<option value="${item.value}" ${item.value === operator ? 'selected' : ''}>${item.label}</option>`;
+            });
+
+            html += `</select>`;
+
+            return html;
+        }
+
+        function renderJournalFilterValueControl(field, normalizedValue) {
+            let key = escapeHtml(field.key);
+            let value = normalizedValue.value ?? '';
+
+            if (field.type === 'date') {
+                return `<input type="date" class="form-control journal-field-filter" data-key="${key}" value="${escapeHtml(String(value || ''))}">`;
+            }
+
+            if (field.type === 'time') {
+                return `<input type="time" class="form-control journal-field-filter" data-key="${key}" value="${escapeHtml(String(value || ''))}">`;
+            }
+
+            if (field.type === 'number' || field.type === 'calc') {
+                return `<input type="number" step="any" class="form-control journal-field-filter" data-key="${key}" value="${escapeHtml(String(value || ''))}" placeholder="Значение">`;
+            }
+
+            if (field.type === 'list') {
+                let html = `<select class="form-select journal-field-filter" data-key="${key}"><option value="">Все</option>`;
+
+                (field.options || []).forEach(function (option) {
+                    let selected = String(option) === String(value) ? 'selected' : '';
+                    html += `<option value="${escapeHtml(option)}" ${selected}>${escapeHtml(option)}</option>`;
+                });
+
+                html += `</select>`;
+                return html;
+            }
+
+            if (field.type === 'directory') {
+                let html = `<select class="form-select journal-field-filter" data-key="${key}"><option value="">Все</option>`;
+
+                (directoryValues[field.directory_id] || []).forEach(function (item) {
+                    let selected = String(item.id) === String(value) ? 'selected' : '';
+                    html += `<option value="${item.id}" ${selected}>${escapeHtml(getDirectoryOptionLabel(field, item))}</option>`;
+                });
+
+                html += `</select>`;
+                return html;
+            }
+
+            if (field.type === 'directory_text') {
+                let html = `<select class="form-select journal-field-filter" data-key="${key}"><option value="">Все</option>`;
+
+                (directoryValues[field.directory_id] || []).forEach(function (item) {
+                    let label = getDirectoryOptionLabel(field, item);
+                    let selected = String(label) === String(value) ? 'selected' : '';
+                    html += `<option value="${escapeHtml(label)}" ${selected}>${escapeHtml(label)}</option>`;
+                });
+
+                html += `</select>`;
+                return html;
+            }
+
+            return `<input type="text" class="form-control journal-field-filter" data-key="${key}" value="${escapeHtml(String(value || ''))}" placeholder="Поиск по полю">`;
+        }
+
+        function renderJournalBetweenValueControl(field, normalizedValue) {
+            if (!supportsAdvancedJournalFilter(field)) {
+                return '';
+            }
+
+            let key = escapeHtml(field.key);
+            let valueTo = normalizedValue.value_to ?? '';
+            let hiddenClass = normalizedValue.operator === 'between' ? '' : ' d-none';
+
+            if (field.type === 'date') {
+                return `<input type="date" class="form-control journal-field-filter-between mt-2${hiddenClass}" data-key="${key}" value="${escapeHtml(String(valueTo || ''))}" placeholder="До">`;
+            }
+
+            if (field.type === 'time') {
+                return `<input type="time" class="form-control journal-field-filter-between mt-2${hiddenClass}" data-key="${key}" value="${escapeHtml(String(valueTo || ''))}" placeholder="До">`;
+            }
+
+            if (field.type === 'number' || field.type === 'calc') {
+                return `<input type="number" step="any" class="form-control journal-field-filter-between mt-2${hiddenClass}" data-key="${key}" value="${escapeHtml(String(valueTo || ''))}" placeholder="До">`;
+            }
+
+            return `<input type="text" class="form-control journal-field-filter-between mt-2${hiddenClass}" data-key="${key}" value="${escapeHtml(String(valueTo || ''))}" placeholder="До">`;
+        }
+
+        function renderFieldFilters(visibleKeys = null, presetValues = {}) {
+            let fields = getFilterableFields(visibleKeys);
             let html = '';
 
             fields.forEach(function (field) {
@@ -1086,8 +1298,29 @@
 
             $('#fieldFiltersContainer').html(html);
 
+            Object.keys(presetValues || {}).forEach(function (key) {
+                $(`.journal-field-filter[data-key="${key}"]`).val(presetValues[key]);
+            });
+
             if (document.getElementById('fieldFiltersContainer')) {
                 initSearchableSelects(document.getElementById('fieldFiltersContainer'));
+            }
+        }
+
+        function applySavedJournalFilter(filterId, shouldLoad = true) {
+            currentSavedJournalFilterId = String(filterId || '');
+            let filter = savedJournalFilters.find(function (item) {
+                return String(item.id) === currentSavedJournalFilterId;
+            });
+
+            if (!filter) {
+                renderFieldFilters();
+            } else {
+                renderFieldFilters(filter.visible_fields || [], filter.values || {});
+            }
+
+            if (shouldLoad) {
+                loadEntries(1);
             }
         }
 
@@ -1921,6 +2154,8 @@
             $('#dateTo').val('');
             $('#statusFilter').val('');
             $('#searchInput').val('');
+            $('#savedJournalFilterSelect').val('');
+            applySavedJournalFilter('', false);
             $('.journal-field-filter').val('');
 
             if ($('#divisionFilter').length) {
@@ -1930,6 +2165,10 @@
             $('#showDeletedFilter').prop('checked', false);
 
             loadEntries(1);
+        });
+
+        $('#savedJournalFilterSelect').on('change', function () {
+            applySavedJournalFilter($(this).val(), true);
         });
 
         $('#searchInput').on('keyup', function (e) {
@@ -2259,6 +2498,290 @@
             updateEntryModalFullscreenButton();
         });
 
+        $('#toggleJournalFiltersBtn').on('click', function () {
+            journalFiltersVisible = !journalFiltersVisible;
+            $('#journalFiltersPanel').toggleClass('d-none', !journalFiltersVisible);
+            updateJournalFiltersButton();
+        });
+
+        $(document).on('change keyup', '#journalFiltersPanel input, #journalFiltersPanel select', function () {
+            updateJournalFiltersButton();
+        });
+
+        function supportsAdvancedJournalFilter(field) {
+            return ['text', 'number', 'date', 'time', 'directory_text', 'calc'].includes(field.type);
+        }
+
+        function normalizeJournalPresetFilterValue(rawValue) {
+            if (rawValue && typeof rawValue === 'object' && !Array.isArray(rawValue)) {
+                return {
+                    operator: String(rawValue.operator || '').trim() || 'eq',
+                    value: rawValue.value ?? '',
+                    value_to: rawValue.value_to ?? '',
+                };
+            }
+
+            return {
+                operator: 'eq',
+                value: rawValue ?? '',
+                value_to: '',
+            };
+        }
+
+        function renderJournalFilterOperatorControl(field, operator = 'eq') {
+            if (!supportsAdvancedJournalFilter(field)) {
+                return '';
+            }
+
+            let options = [
+                {value: 'eq', label: '='},
+                {value: 'gt', label: '>'},
+                {value: 'lt', label: '<'},
+                {value: 'neq', label: '<>'},
+                {value: 'between', label: 'between'},
+            ];
+
+            if (field.type !== 'number' && field.type !== 'date' && field.type !== 'time' && field.type !== 'calc') {
+                options.push({value: 'contains', label: 'contains'});
+            }
+
+            let html = `<select class="form-select form-select-sm journal-field-filter-operator mb-2" data-key="${escapeHtml(field.key)}">`;
+            options.forEach(function (item) {
+                html += `<option value="${item.value}" ${item.value === operator ? 'selected' : ''}>${item.label}</option>`;
+            });
+            html += `</select>`;
+
+            return html;
+        }
+
+        function renderJournalFilterValueControl(field, normalizedValue) {
+            let key = escapeHtml(field.key);
+            let value = normalizedValue.value ?? '';
+
+            if (field.type === 'date') {
+                return `<input type="date" class="form-control journal-field-filter" data-key="${key}" value="${escapeHtml(String(value || ''))}">`;
+            }
+
+            if (field.type === 'time') {
+                return `<input type="time" class="form-control journal-field-filter" data-key="${key}" value="${escapeHtml(String(value || ''))}">`;
+            }
+
+            if (field.type === 'number' || field.type === 'calc') {
+                return `<input type="number" step="any" class="form-control journal-field-filter" data-key="${key}" value="${escapeHtml(String(value || ''))}" placeholder="Значение">`;
+            }
+
+            if (field.type === 'list') {
+                let html = `<select class="form-select journal-field-filter" data-key="${key}"><option value="">Все</option>`;
+                (field.options || []).forEach(function (option) {
+                    let selected = String(option) === String(value) ? 'selected' : '';
+                    html += `<option value="${escapeHtml(option)}" ${selected}>${escapeHtml(option)}</option>`;
+                });
+                html += `</select>`;
+                return html;
+            }
+
+            if (field.type === 'directory') {
+                let html = `<select class="form-select journal-field-filter" data-key="${key}"><option value="">Все</option>`;
+                (directoryValues[field.directory_id] || []).forEach(function (item) {
+                    let selected = String(item.id) === String(value) ? 'selected' : '';
+                    html += `<option value="${item.id}" ${selected}>${escapeHtml(getDirectoryOptionLabel(field, item))}</option>`;
+                });
+                html += `</select>`;
+                return html;
+            }
+
+            if (field.type === 'directory_text') {
+                let html = `<select class="form-select journal-field-filter" data-key="${key}"><option value="">Все</option>`;
+                (directoryValues[field.directory_id] || []).forEach(function (item) {
+                    let label = getDirectoryOptionLabel(field, item);
+                    let selected = String(label) === String(value) ? 'selected' : '';
+                    html += `<option value="${escapeHtml(label)}" ${selected}>${escapeHtml(label)}</option>`;
+                });
+                html += `</select>`;
+                return html;
+            }
+
+            return `<input type="text" class="form-control journal-field-filter" data-key="${key}" value="${escapeHtml(String(value || ''))}" placeholder="Поиск по полю">`;
+        }
+
+        function renderJournalBetweenValueControl(field, normalizedValue) {
+            if (!supportsAdvancedJournalFilter(field)) {
+                return '';
+            }
+
+            let key = escapeHtml(field.key);
+            let valueTo = normalizedValue.value_to ?? '';
+            let hiddenClass = normalizedValue.operator === 'between' ? '' : ' d-none';
+
+            if (field.type === 'date') {
+                return `<input type="date" class="form-control journal-field-filter-between mt-2${hiddenClass}" data-key="${key}" value="${escapeHtml(String(valueTo || ''))}" placeholder="До">`;
+            }
+
+            if (field.type === 'time') {
+                return `<input type="time" class="form-control journal-field-filter-between mt-2${hiddenClass}" data-key="${key}" value="${escapeHtml(String(valueTo || ''))}" placeholder="До">`;
+            }
+
+            if (field.type === 'number' || field.type === 'calc') {
+                return `<input type="number" step="any" class="form-control journal-field-filter-between mt-2${hiddenClass}" data-key="${key}" value="${escapeHtml(String(valueTo || ''))}" placeholder="До">`;
+            }
+
+            return `<input type="text" class="form-control journal-field-filter-between mt-2${hiddenClass}" data-key="${key}" value="${escapeHtml(String(valueTo || ''))}" placeholder="До">`;
+        }
+
+        renderFieldFilters = function (visibleKeys = null, presetValues = {}) {
+            let fields = getFilterableFields(visibleKeys);
+            let html = '';
+
+            fields.forEach(function (field) {
+                let normalizedValue = normalizeJournalPresetFilterValue(presetValues[field.key]);
+                html += `<div class="col-md-3">`;
+                html += `<label class="form-label">${escapeHtml(field.label)}</label>`;
+                html += renderJournalFilterOperatorControl(field, normalizedValue.operator);
+                html += renderJournalFilterValueControl(field, normalizedValue);
+                html += renderJournalBetweenValueControl(field, normalizedValue);
+                html += `</div>`;
+            });
+
+            $('#fieldFiltersContainer').html(html);
+
+            if (document.getElementById('fieldFiltersContainer')) {
+                initSearchableSelects(document.getElementById('fieldFiltersContainer'));
+            }
+        };
+
+        collectFieldFilters = function () {
+            let filters = {};
+
+            $('.journal-field-filter').each(function () {
+                let key = $(this).data('key');
+                let value = $(this).val();
+                let operatorField = $(`.journal-field-filter-operator[data-key="${key}"]`);
+                let betweenField = $(`.journal-field-filter-between[data-key="${key}"]`);
+                let operator = operatorField.length ? (operatorField.val() || 'eq') : 'eq';
+                let valueTo = betweenField.length ? betweenField.val() : '';
+
+                if (value !== null && value !== '') {
+                    filters[key] = {
+                        operator: operator,
+                        value: value,
+                    };
+                }
+
+                if (operator === 'between' && valueTo !== null && valueTo !== '') {
+                    filters[key] = filters[key] || {
+                        operator: operator,
+                        value: value || '',
+                    };
+                    filters[key].value_to = valueTo;
+                }
+            });
+
+            return filters;
+        };
+
+        function appendAdvancedJournalFieldFilters(params, fieldFilters) {
+            Object.keys(fieldFilters).forEach(function (key) {
+                params.append(`field_filters[${key}][operator]`, fieldFilters[key].operator || 'eq');
+                params.append(`field_filters[${key}][value]`, fieldFilters[key].value || '');
+
+                if (fieldFilters[key].value_to !== undefined && fieldFilters[key].value_to !== '') {
+                    params.append(`field_filters[${key}][value_to]`, fieldFilters[key].value_to);
+                }
+            });
+        }
+
+        buildPrintUrl = function (printTemplateId = null) {
+            let params = new URLSearchParams();
+
+            if ($('#dateFrom').val()) {
+                params.append('date_from', $('#dateFrom').val());
+            }
+
+            if ($('#dateTo').val()) {
+                params.append('date_to', $('#dateTo').val());
+            }
+
+            if ($('#statusFilter').val()) {
+                params.append('status', $('#statusFilter').val());
+            }
+
+            if ($('#searchInput').val()) {
+                params.append('search', $('#searchInput').val());
+            }
+
+            appendAdvancedJournalFieldFilters(params, collectFieldFilters());
+
+            if ($('#divisionFilter').length && $('#divisionFilter').val()) {
+                params.append('division_id', $('#divisionFilter').val());
+            }
+
+            if ($('#showDeletedFilter').is(':checked')) {
+                params.append('show_deleted', '1');
+            }
+
+            if (printTemplateId) {
+                params.append('print_template_id', printTemplateId);
+            }
+
+            let url = `/journals/${journalId}/print`;
+
+            if (params.toString()) {
+                url += '?' + params.toString();
+            }
+
+            return url;
+        };
+
+        buildExportUrl = function (format) {
+            let params = new URLSearchParams();
+
+            if ($('#dateFrom').val()) {
+                params.append('date_from', $('#dateFrom').val());
+            }
+
+            if ($('#dateTo').val()) {
+                params.append('date_to', $('#dateTo').val());
+            }
+
+            if ($('#statusFilter').val()) {
+                params.append('status', $('#statusFilter').val());
+            }
+
+            if ($('#searchInput').val()) {
+                params.append('search', $('#searchInput').val());
+            }
+
+            appendAdvancedJournalFieldFilters(params, collectFieldFilters());
+
+            if ($('#divisionFilter').length && $('#divisionFilter').val()) {
+                params.append('division_id', $('#divisionFilter').val());
+            }
+
+            if ($('#showDeletedFilter').is(':checked')) {
+                params.append('show_deleted', '1');
+            }
+
+            let url = `/journals/${journalId}/export/${encodeURIComponent(format)}`;
+
+            if (params.toString()) {
+                url += '?' + params.toString();
+            }
+
+            return url;
+        };
+
+        $(document).on('change', '.journal-field-filter-operator', function () {
+            let key = $(this).data('key');
+            let showBetween = $(this).val() === 'between';
+            $(`.journal-field-filter-between[data-key="${key}"]`).toggleClass('d-none', !showBetween);
+
+            if (!showBetween) {
+                $(`.journal-field-filter-between[data-key="${key}"]`).val('');
+            }
+
+            loadEntries(1);
+        });
+
         $('#entryModal').on('hidden.bs.modal', function () {
             entryModalFullscreen = false;
             $('#entryModalDialog').removeClass('modal-dialog-fullscreen');
@@ -2267,6 +2790,7 @@
 
         updateJournalFullscreenButton();
         updateEntryModalFullscreenButton();
+        updateJournalFiltersButton();
         renderTableHead();
         renderFieldFilters();
         renderDynamicForm({});

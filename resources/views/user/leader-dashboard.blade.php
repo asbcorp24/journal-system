@@ -84,7 +84,9 @@
                         </div>
                     </div>
 
-                    <canvas id="leaderDailyChart" height="120"></canvas>
+                    <div style="height: 340px;">
+                        <canvas id="leaderDailyChart"></canvas>
+                    </div>
                 </div>
             </div>
         </div>

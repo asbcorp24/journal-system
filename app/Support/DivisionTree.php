@@ -78,4 +78,48 @@ class DivisionTree
 
         return $result;
     }
+
+    public static function descendantsAndSelfIds(?int $divisionId): array
+    {
+        if (!$divisionId) {
+            return [];
+        }
+
+        $divisions = Division::query()
+            ->get(['id', 'parent_id']);
+
+        $childrenMap = [];
+
+        foreach ($divisions as $division) {
+            $parentId = $division->parent_id;
+
+            if ($parentId === null) {
+                continue;
+            }
+
+            $childrenMap[$parentId] ??= [];
+            $childrenMap[$parentId][] = (int) $division->id;
+        }
+
+        $result = [];
+        $queue = [(int) $divisionId];
+
+        while (!empty($queue)) {
+            $currentId = array_shift($queue);
+
+            if (in_array($currentId, $result, true)) {
+                continue;
+            }
+
+            $result[] = $currentId;
+
+            foreach ($childrenMap[$currentId] ?? [] as $childId) {
+                $queue[] = $childId;
+            }
+        }
+
+        sort($result);
+
+        return $result;
+    }
 }

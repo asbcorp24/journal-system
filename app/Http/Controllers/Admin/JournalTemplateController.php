@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Directory;
 use App\Models\Division;
 use App\Models\JournalTemplate;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -20,6 +21,10 @@ class JournalTemplateController extends Controller
 
         $divisions = Division::orderBy('name')->get();
         $directories = Directory::orderBy('name')->get();
+        $approvers = User::query()
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get(['id', 'name', 'role', 'division_id']);
         $journalTemplateRoutes = $this->journalTemplateRoutes();
         $journalTemplatePageLayout = $this->journalTemplatePageLayout();
         $journalTemplatePageTitle = $this->journalTemplatePageTitle();
@@ -28,6 +33,7 @@ class JournalTemplateController extends Controller
         return view('admin.journal-templates.index', compact(
             'divisions',
             'directories',
+            'approvers',
             'journalTemplateRoutes',
             'journalTemplatePageLayout',
             'journalTemplatePageTitle',
@@ -40,7 +46,7 @@ class JournalTemplateController extends Controller
         $this->authorizePageAccess();
 
         $query = $this->visibleJournalTemplatesQuery()
-            ->with(['divisions', 'creator'])
+            ->with(['divisions', 'creator', 'approver.division'])
             ->withCount(['entries as entries_count' => function ($query) {
                 $query->withTrashed();
             }])
@@ -90,6 +96,7 @@ class JournalTemplateController extends Controller
                 'schema' => $validated['schema'],
                 'is_active' => $request->boolean('is_active'),
                 'created_by' => $this->currentJournalTemplateCreatorId(),
+                'approver_user_id' => $validated['approver_user_id'] ?? null,
             ]);
 
             $template->divisions()->sync($validated['division_ids'] ?? []);
@@ -119,6 +126,7 @@ class JournalTemplateController extends Controller
                 'schema' => $journalTemplate->schema ?? [],
                 'is_active' => $journalTemplate->is_active,
                 'division_ids' => $journalTemplate->divisions->pluck('id')->values(),
+                'approver_user_id' => $journalTemplate->approver_user_id,
             ],
         ]);
     }
@@ -143,6 +151,7 @@ class JournalTemplateController extends Controller
                 'description' => $validated['description'] ?? null,
                 'schema' => $validated['schema'],
                 'is_active' => $request->boolean('is_active'),
+                'approver_user_id' => $validated['approver_user_id'] ?? null,
             ]);
 
             $journalTemplate->divisions()->sync($validated['division_ids'] ?? []);
@@ -187,6 +196,12 @@ class JournalTemplateController extends Controller
                 'code' => $journalTemplate->code,
                 'description' => $journalTemplate->description,
                 'is_active' => (bool) $journalTemplate->is_active,
+                'approver' => $journalTemplate->approver
+                    ? [
+                        'email' => $journalTemplate->approver->email,
+                        'name' => $journalTemplate->approver->name,
+                    ]
+                    : null,
                 'divisions' => $journalTemplate->divisions->map(function (Division $division) {
                     return [
                         'name' => $division->name,
@@ -221,6 +236,7 @@ class JournalTemplateController extends Controller
             'code' => $importedCode,
             'description' => $template['description'] ?? null,
             'is_active' => !empty($template['is_active']),
+            'approver_user_id' => $this->resolveApproverIdFromImport($template['approver'] ?? null),
             'division_ids' => $this->resolveDivisionIdsFromImport($template['divisions'] ?? []),
             'schema' => $this->importJournalSchema($template['schema'] ?? [], (string) ($template['code'] ?? ''), (string) ($importedCode ?? '')),
         ];
@@ -235,6 +251,7 @@ class JournalTemplateController extends Controller
                 'schema' => $validated['schema'],
                 'is_active' => !empty($input['is_active']),
                 'created_by' => $this->currentJournalTemplateCreatorId(),
+                'approver_user_id' => $validated['approver_user_id'] ?? null,
             ]);
 
             $template->divisions()->sync($validated['division_ids'] ?? []);
@@ -426,6 +443,10 @@ class JournalTemplateController extends Controller
                 'nullable',
                 'array',
             ],
+            'approver_user_id' => [
+                'nullable',
+                'exists:users,id',
+            ],
             'division_ids.*' => [
                 'exists:divisions,id',
             ],
@@ -590,6 +611,34 @@ class JournalTemplateController extends Controller
         $validated['schema'] = $schema;
 
         return $validated;
+    }
+
+    private function resolveApproverIdFromImport($approver): ?int
+    {
+        if (!is_array($approver)) {
+            return null;
+        }
+
+        $email = trim((string) ($approver['email'] ?? ''));
+        $name = trim((string) ($approver['name'] ?? ''));
+
+        if ($email !== '') {
+            $id = User::query()->where('email', $email)->value('id');
+
+            if ($id) {
+                return (int) $id;
+            }
+        }
+
+        if ($name !== '') {
+            $id = User::query()->where('name', $name)->value('id');
+
+            if ($id) {
+                return (int) $id;
+            }
+        }
+
+        return null;
     }
 
     private function exportJournalSchema(array $schema): array

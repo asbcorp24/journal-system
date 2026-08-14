@@ -75,12 +75,13 @@
                         <th>Статус</th>
                         <th>Автор</th>
                         <th class="text-end">Действия</th>
+                        <th>РЎРѕРіР»Р°СЃСѓРµС‚</th>
                     </tr>
                     </thead>
 
                     <tbody id="templatesTableBody">
                     <tr>
-                        <td colspan="8" class="text-center text-secondary py-5">
+                        <td colspan="9" class="text-center text-secondary py-5">
                             Загрузка...
                         </td>
                     </tr>
@@ -172,6 +173,21 @@
                                 Если ничего не выбрано — журнал пока ни одному подразделению не назначен.
                             </div>
                         </div>
+
+                        <div class="col-md-12">
+                            <label class="form-label">РЎРѕРіР»Р°СЃСѓСЋС‰РёР№</label>
+                            <select class="form-select" id="templateApproverUserId" name="approver_user_id">
+                                <option value="">РќРµ РЅР°Р·РЅР°С‡РµРЅ</option>
+                                @foreach($approvers as $approver)
+                                    <option value="{{ $approver->id }}">
+                                        {{ $approver->name }} / {{ $approver->role }}
+                                    </option>
+                                @endforeach
+                            </select>
+                            <div class="text-secondary small mt-1">
+                                Р­С‚РѕС‚ РїРѕР»СЊР·РѕРІР°С‚РµР»СЊ СЃРјРѕР¶РµС‚ СЃРѕРіР»Р°СЃРѕРІС‹РІР°С‚СЊ Р·Р°РїРёСЃРё РїРѕ СЌС‚РѕРјСѓ Р¶СѓСЂРЅР°Р»Сѓ, РґР°Р¶Рµ РµСЃР»Рё РѕРЅ РёР· РґСЂСѓРіРѕРіРѕ РїРѕРґСЂР°Р·РґРµР»РµРЅРёСЏ.
+                            </div>
+                        </div>
                     </div>
 
                     <hr>
@@ -260,6 +276,7 @@
         let fieldIndex = 0;
 
         const directories = @json($directories);
+        const approvers = @json($approvers);
         const journalTemplateRoutes = @json($journalTemplateRoutes);
         const journalTemplateCanModifyUsed = @json($journalTemplateCanModifyUsed ?? true);
         const journalWizardPresets = {
@@ -346,7 +363,7 @@
             if (!items || items.length === 0) {
                 $('#templatesTableBody').html(`
                 <tr>
-                    <td colspan="8" class="text-center text-secondary py-5">
+                    <td colspan="9" class="text-center text-secondary py-5">
                         Журналы не найдены
                     </td>
                 </tr>
@@ -376,6 +393,10 @@
                 let authorName = item.creator && item.creator.name
                     ? escapeHtml(item.creator.name)
                     : '<span class="text-secondary">Суперадмин</span>';
+
+                let approverName = item.approver && item.approver.name
+                    ? escapeHtml(item.approver.name)
+                    : '<span class="text-secondary">РќРµ РЅР°Р·РЅР°С‡РµРЅ</span>';
 
                 html += `
                 <tr>
@@ -411,6 +432,8 @@
                             <i class="bi bi-trash"></i>
                         </button>
                     </td>
+
+                    <td>${approverName}</td>
                 </tr>
             `;
             });
@@ -465,6 +488,7 @@
 
             $('#templateId').val('');
             $('#templateDivisions').val([]);
+            $('#templateApproverUserId').val('');
             $('#templateIsActive').prop('checked', true);
 
             fields = [];
@@ -1071,6 +1095,7 @@
                 description: $('#templateDescription').val(),
                 is_active: $('#templateIsActive').is(':checked') ? 1 : 0,
                 division_ids: $('#templateDivisions').val() || [],
+                approver_user_id: $('#templateApproverUserId').val() || '',
                 schema: buildSchemaForSubmit()
             };
             console.log('SCHEMA TO SAVE:', payload.schema);
@@ -1108,6 +1133,7 @@
                     $('#templateDescription').val(item.description);
                     $('#templateIsActive').prop('checked', item.is_active);
                     $('#templateDivisions').val(item.division_ids);
+                    $('#templateApproverUserId').val(item.approver_user_id || '');
 
                     fields = [];
                     fieldIndex = 0;

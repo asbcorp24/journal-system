@@ -3,14 +3,19 @@
 namespace App\Http\Controllers\User;
 
 use App\Http\Controllers\Controller;
+use App\Models\ActivityLog;
 use App\Models\Directory;
+use App\Models\DirectoryScript;
+use App\Models\DirectoryTemplateList;
 use App\Models\DirectoryValue;
+use App\Models\SavedFilter;
 use App\Models\UserFavorite;
 use App\Support\DirectorySchema;
 use App\Support\DivisionTree;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class DirectoryController extends Controller
@@ -39,7 +44,11 @@ class DirectoryController extends Controller
             })
             ->values();
 
-        return view('user.directories.index', compact('directories'));
+        $templateLists = DirectorySchema::normalizeTemplateLists(
+            DirectoryTemplateList::query()->with('creator')->orderBy('name')->get()
+        );
+
+        return view('user.directories.index', compact('directories', 'templateLists'));
     }
 
     public function list(Request $request)
@@ -71,7 +80,8 @@ class DirectoryController extends Controller
                     'name' => $directory->name,
                     'code' => $directory->code,
                     'description' => $directory->description,
-                    'schema' => $directory->schema ?? [],
+                    'schema' => $this->prepareDirectorySchemaForRuntime($directory, $directory->schema ?? []),
+                    'scripts' => $this->serializeDirectoryScripts($directory->scripts()->where('is_active', true)->get()),
                     'is_favorite' => in_array((int) $directory->id, $favoriteIds, true),
                 ];
             })->sortByDesc('is_favorite')->values(),
@@ -82,9 +92,15 @@ class DirectoryController extends Controller
     {
         $this->ensureDirectoryAccess($directory);
 
-        $schema = $directory->schema ?? [];
+        $schema = $this->prepareDirectorySchemaForRuntime($directory, $directory->schema ?? []);
         $filters = $this->normalizeValueFilters($request->input('filters', []), $schema);
-        $items = $this->buildDirectoryValuesCollection($request, $directory, $schema, $filters);
+        $items = $this->buildDirectoryValuesCollection(
+            $request,
+            $directory,
+            $schema,
+            $filters,
+            $request->boolean('show_deleted')
+        );
 
         if ($request->boolean('all')) {
             return response()->json([
@@ -92,12 +108,17 @@ class DirectoryController extends Controller
                 'directory' => [
                     'id' => $directory->id,
                     'name' => $directory->name,
-                    'description' => $directory->description,
-                    'schema' => $schema,
-                ],
-                'items' => $items->map(function (DirectoryValue $value) {
-                    return $this->serializeValue($value);
-                })->values(),
+                'description' => $directory->description,
+                'schema' => $schema,
+                'scripts' => $this->serializeDirectoryScripts($directory->scripts()->where('is_active', true)->get()),
+                'filter_presets' => $this->serializeSavedFilters($directory),
+                'template_lists' => DirectorySchema::normalizeTemplateLists(
+                    DirectoryTemplateList::query()->with('creator')->orderBy('name')->get()
+                ),
+            ],
+            'items' => $items->map(function (DirectoryValue $value) {
+                return $this->serializeValue($value);
+            })->values(),
             ]);
         }
 
@@ -117,6 +138,11 @@ class DirectoryController extends Controller
                 'name' => $directory->name,
                 'description' => $directory->description,
                 'schema' => $schema,
+                'scripts' => $this->serializeDirectoryScripts($directory->scripts()->where('is_active', true)->get()),
+                'filter_presets' => $this->serializeSavedFilters($directory),
+                'template_lists' => DirectorySchema::normalizeTemplateLists(
+                    DirectoryTemplateList::query()->with('creator')->orderBy('name')->get()
+                ),
             ],
             'items' => $values->getCollection()->map(function (DirectoryValue $value) {
                 return $this->serializeValue($value);
@@ -142,7 +168,7 @@ class DirectoryController extends Controller
             abort(404);
         }
 
-        $schema = $directory->schema ?? [];
+        $schema = $this->prepareDirectorySchemaForRuntime($directory, $directory->schema ?? []);
         $filters = $this->normalizeValueFilters($request->input('filters', []), $schema);
         $items = $this->buildDirectoryValuesCollection($request, $directory, $schema, $filters);
 
@@ -199,6 +225,8 @@ class DirectoryController extends Controller
                 ])->validate();
 
                 $directory->values()->create([
+                    'created_by' => $this->currentActorId(),
+                    'updated_by' => $this->currentActorId(),
                     'value' => $displayValue,
                     'data' => $recordData,
                     'code' => $validatedMeta['code'] ?? null,
@@ -239,7 +267,7 @@ class DirectoryController extends Controller
             $query->orderBy('sort_order')->orderBy('value');
         }]);
 
-        $schema = $directory->schema ?? [];
+        $schema = $this->prepareDirectorySchemaForRuntime($directory, $directory->schema ?? []);
         $qrField = collect($schema)->firstWhere('type', 'qr');
 
         return view('admin.directories.barcodes', [
@@ -255,20 +283,32 @@ class DirectoryController extends Controller
         $this->ensureDirectoryAccess($directory);
         $this->ensureCanManageValues();
 
-        [$recordData, $displayValue] = $this->validateDirectoryValuePayload($request, $directory);
+        [$recordData, $displayValue, $pendingUploads] = $this->validateDirectoryValuePayload($request, $directory);
 
         $validated = $request->validate([
             'code' => ['nullable', 'string', 'max:255'],
             'sort_order' => ['nullable', 'integer', 'min:0'],
         ]);
 
-        $value = $directory->values()->create([
-            'value' => $displayValue,
-            'data' => $recordData,
-            'code' => $validated['code'] ?? null,
-            'sort_order' => $validated['sort_order'] ?? 0,
-            'is_active' => true,
-        ]);
+        $this->storePendingDirectoryImages($pendingUploads);
+
+        try {
+            $value = $directory->values()->create([
+                'created_by' => $this->currentActorId(),
+                'updated_by' => $this->currentActorId(),
+                'value' => $displayValue,
+                'data' => $recordData,
+                'code' => $validated['code'] ?? null,
+                'sort_order' => $validated['sort_order'] ?? 0,
+                'is_active' => true,
+            ]);
+        } catch (\Throwable $e) {
+            $this->deleteDirectoryImageFiles(array_keys($pendingUploads));
+            throw $e;
+        }
+
+        $value->load(['directory', 'creator', 'updater', 'deleter']);
+        $this->logDirectoryValueActivity('directory_value_created', $value, 'Добавлено значение справочника');
 
         return response()->json([
             'success' => true,
@@ -284,19 +324,31 @@ class DirectoryController extends Controller
         $this->ensureDirectoryAccess($value->directory);
         $this->ensureCanManageValues();
 
-        [$recordData, $displayValue] = $this->validateDirectoryValuePayload($request, $value->directory, $value->id);
+        [$recordData, $displayValue, $pendingUploads, $replacedFiles] = $this->validateDirectoryValuePayload($request, $value->directory, $value->id);
 
         $validated = $request->validate([
             'code' => ['nullable', 'string', 'max:255'],
             'sort_order' => ['nullable', 'integer', 'min:0'],
         ]);
 
-        $value->update([
-            'value' => $displayValue,
-            'data' => $recordData,
-            'code' => $validated['code'] ?? null,
-            'sort_order' => $validated['sort_order'] ?? 0,
-        ]);
+        $this->storePendingDirectoryImages($pendingUploads);
+
+        try {
+            $value->update([
+                'value' => $displayValue,
+                'data' => $recordData,
+                'code' => $validated['code'] ?? null,
+                'sort_order' => $validated['sort_order'] ?? 0,
+                'updated_by' => $this->currentActorId(),
+            ]);
+        } catch (\Throwable $e) {
+            $this->deleteDirectoryImageFiles(array_keys($pendingUploads));
+            throw $e;
+        }
+
+        $this->deleteDirectoryImageFiles($replacedFiles);
+        $value->load(['directory', 'creator', 'updater', 'deleter']);
+        $this->logDirectoryValueActivity('directory_value_updated', $value, 'Обновлено значение справочника');
 
         return response()->json([
             'success' => true,
@@ -312,11 +364,44 @@ class DirectoryController extends Controller
         $this->ensureDirectoryAccess($value->directory);
         $this->ensureCanDeleteValues();
 
+        $value->forceFill([
+            'deleted_by' => $this->currentActorId(),
+        ])->save();
         $value->delete();
+        $this->logDirectoryValueActivity('directory_value_deleted', $value, 'Значение справочника помечено как удалённое');
 
         return response()->json([
             'success' => true,
             'message' => 'Значение удалено',
+        ]);
+    }
+
+    public function restoreValue(DirectoryValue $value)
+    {
+        $value->load('directory');
+
+        $this->ensureDirectoryAccess($value->directory);
+        $this->ensureCanDeleteValues();
+
+        if (!$value->trashed()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Запись не находится в удалённых',
+            ], 422);
+        }
+
+        $value->restore();
+        $value->forceFill([
+            'deleted_by' => null,
+            'updated_by' => $this->currentActorId(),
+        ])->save();
+        $value->load(['directory', 'creator', 'updater', 'deleter']);
+        $this->logDirectoryValueActivity('directory_value_restored', $value, 'Значение справочника восстановлено');
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Запись восстановлена',
+            'value' => $this->serializeValue($value),
         ]);
     }
 
@@ -357,28 +442,69 @@ class DirectoryController extends Controller
         abort_unless(session('user_role') === 'admin', 403, 'Недостаточно прав для удаления значений');
     }
 
+    private function prepareDirectorySchemaForRuntime(Directory $directory, array $schema): array
+    {
+        return collect($schema)->map(function ($field) use ($directory) {
+            if (!is_array($field) || ($field['type'] ?? null) !== 'parent') {
+                return $field;
+            }
+
+            $field['directory_id'] = $directory->id;
+            $field['directory_display_field'] = $field['parent_display_field'] ?? null;
+
+            return $field;
+        })->values()->all();
+    }
+
+    private function validateParentSelfReference(array $schema, array $recordData, ?int $currentValueId = null): void
+    {
+        if (!$currentValueId) {
+            return;
+        }
+
+        foreach ($schema as $field) {
+            if (($field['type'] ?? null) !== 'parent') {
+                continue;
+            }
+
+            $key = (string) ($field['key'] ?? '');
+            $label = (string) ($field['label'] ?? $key);
+            $value = $recordData[$key] ?? null;
+
+            if ($key !== '' && $value !== null && (int) $value === $currentValueId) {
+                throw ValidationException::withMessages([
+                    "data.{$key}" => ["Поле «{$label}» не может ссылаться на текущую запись"],
+                ]);
+            }
+        }
+    }
+
     private function validateDirectoryValuePayload(Request $request, Directory $directory, ?int $ignoreId = null): array
     {
-        $schema = $directory->schema ?? [];
+        $schema = $this->prepareDirectorySchemaForRuntime($directory, $directory->schema ?? []);
 
         if (empty($schema)) {
             $validated = $request->validate([
                 'value' => ['required', 'string', 'max:255'],
             ]);
 
-            return [null, trim($validated['value'])];
+            return [null, trim($validated['value']), [], []];
         }
 
         $request->validate([
             'data' => ['required', 'array'],
         ]);
 
-        $input = $this->applyAutoGeneratedQrFields($schema, $request->input('data', []), $ignoreId ? $this->findExistingData($directory, $ignoreId) : []);
+        $existingData = $ignoreId ? $this->findExistingData($directory, $ignoreId) : [];
+        [$input, $pendingUploads, $replacedFiles] = $this->prepareDirectoryImageFields($request, $directory, $schema, $request->input('data', []), $existingData);
+        $input = $this->applyAutoGeneratedQrFields($schema, $input, $existingData);
+        $input = DirectorySchema::applyTemplateListValues($schema, $input, $existingData);
         $recordData = DirectorySchema::validateRecord($schema, $input);
+        $this->validateParentSelfReference($schema, $recordData, $ignoreId);
         DirectorySchema::validateUniqueFields($schema, $recordData, $directory->values()->get(['id', 'data']), $ignoreId);
         $displayValue = DirectorySchema::resolveDisplayValue($schema, $recordData);
 
-        return [$recordData, $displayValue];
+        return [$recordData, $displayValue, $pendingUploads, $replacedFiles];
     }
 
     private function applyAutoGeneratedQrFields(array $schema, array $data, array $existingData = []): array
@@ -416,11 +542,16 @@ class DirectoryController extends Controller
         return 'QR-' . now()->format('YmdHis') . '-' . strtoupper(substr(bin2hex(random_bytes(3)), 0, 6));
     }
 
-    private function buildDirectoryValuesCollection(Request $request, Directory $directory, array $schema, array $filters)
+    private function buildDirectoryValuesCollection(Request $request, Directory $directory, array $schema, array $filters, bool $showDeleted = false)
     {
         $query = $directory->values()
+            ->with(['directory', 'creator', 'updater', 'deleter'])
             ->orderBy('sort_order')
             ->orderBy('value');
+
+        if ($showDeleted) {
+            $query->withTrashed()->whereNotNull('deleted_at');
+        }
 
         if ($request->filled('search')) {
             $search = trim((string) $request->search);
@@ -444,15 +575,234 @@ class DirectoryController extends Controller
 
     private function serializeValue(DirectoryValue $value): array
     {
+        $directory = $value->relationLoaded('directory') && $value->directory
+            ? $value->directory
+            : $value->directory()->first();
+        $schema = $directory ? $this->prepareDirectorySchemaForRuntime($directory, $directory->schema ?? []) : [];
+        $data = is_array($value->data) ? $value->data : [];
+
         return [
             'id' => $value->id,
             'value' => $value->value,
-            'data' => $value->data,
+            'data' => $data,
+            'image_urls' => $this->buildDirectoryImageUrls($schema, $data),
             'code' => $value->code,
             'sort_order' => $value->sort_order,
             'is_active' => (bool) $value->is_active,
             'created_at' => optional($value->created_at)->format('Y-m-d H:i:s'),
+            'updated_at' => optional($value->updated_at)->format('Y-m-d H:i:s'),
+            'deleted_at' => optional($value->deleted_at)->format('Y-m-d H:i:s'),
+            'created_by' => $value->created_by,
+            'updated_by' => $value->updated_by,
+            'deleted_by' => $value->deleted_by,
+            'created_by_name' => optional($value->creator)->name,
+            'updated_by_name' => optional($value->updater)->name,
+            'deleted_by_name' => optional($value->deleter)->name,
         ];
+    }
+
+    private function currentActorId(): ?int
+    {
+        $userId = session('user_id');
+
+        return $userId ? (int) $userId : null;
+    }
+
+    private function logDirectoryValueActivity(string $action, DirectoryValue $value, string $description): void
+    {
+        $directory = $value->relationLoaded('directory') && $value->directory
+            ? $value->directory
+            : $value->directory()->first();
+
+        $directoryName = $directory?->name ? ' [' . $directory->name . ']' : '';
+        $valueLabel = trim((string) ($value->value ?? ''));
+
+        ActivityLog::create([
+            'user_id' => $this->currentActorId(),
+            'action' => $action,
+            'entity_type' => 'directory_value',
+            'entity_id' => $value->id,
+            'description' => $description . $directoryName . ($valueLabel !== '' ? ': ' . $valueLabel : ''),
+            'ip_address' => request()->ip(),
+            'created_at' => now(),
+        ]);
+    }
+
+    private function prepareDirectoryImageFields(Request $request, Directory $directory, array $schema, array $input, array $existingData = []): array
+    {
+        $pendingUploads = [];
+        $replacedFiles = [];
+
+        foreach ($schema as $field) {
+            if (($field['type'] ?? null) !== 'image') {
+                continue;
+            }
+
+            $key = (string) ($field['key'] ?? '');
+
+            if ($key === '') {
+                continue;
+            }
+
+            $request->validate([
+                "data.{$key}" => ['nullable', 'file', 'mimes:png,jpg,jpeg', 'max:5120'],
+            ]);
+
+            $uploadedFile = $request->file("data.{$key}");
+
+            if ($uploadedFile) {
+                $extension = strtolower((string) $uploadedFile->getClientOriginalExtension());
+                $extension = $extension === 'jpeg' ? 'jpg' : $extension;
+                $fileName = $this->generateDirectoryImageFileName($directory, $key, $extension);
+                $input[$key] = $fileName;
+                $pendingUploads[$fileName] = $uploadedFile;
+
+                $oldFile = (string) ($existingData[$key] ?? '');
+                if ($oldFile !== '' && $oldFile !== $fileName) {
+                    $replacedFiles[] = $oldFile;
+                }
+
+                continue;
+            }
+
+            if ($request->boolean("image_remove.{$key}")) {
+                $oldFile = (string) ($existingData[$key] ?? '');
+                $input[$key] = null;
+
+                if ($oldFile !== '') {
+                    $replacedFiles[] = $oldFile;
+                }
+
+                continue;
+            }
+
+            if (!empty($existingData[$key])) {
+                $input[$key] = $existingData[$key];
+            }
+        }
+
+        return [$input, $pendingUploads, array_values(array_unique($replacedFiles))];
+    }
+
+    private function storePendingDirectoryImages(array $pendingUploads): void
+    {
+        if (empty($pendingUploads)) {
+            return;
+        }
+
+        $directory = $this->directoryImagesPath();
+        if (!is_dir($directory)) {
+            mkdir($directory, 0777, true);
+        }
+
+        foreach ($pendingUploads as $fileName => $uploadedFile) {
+            $uploadedFile->move($directory, $fileName);
+        }
+    }
+
+    private function deleteDirectoryImageFiles(array $fileNames): void
+    {
+        foreach (array_unique(array_filter($fileNames)) as $fileName) {
+            $path = $this->directoryImagePath((string) $fileName);
+
+            if (is_file($path)) {
+                @unlink($path);
+            }
+        }
+    }
+
+    private function extractDirectoryImageFiles(array $schema, array $data): array
+    {
+        $files = [];
+
+        foreach ($schema as $field) {
+            if (($field['type'] ?? null) !== 'image') {
+                continue;
+            }
+
+            $key = $field['key'] ?? null;
+            $fileName = $key ? ($data[$key] ?? null) : null;
+
+            if (is_string($fileName) && $fileName !== '') {
+                $files[] = $fileName;
+            }
+        }
+
+        return $files;
+    }
+
+    private function buildDirectoryImageUrls(array $schema, array $data): array
+    {
+        $urls = [];
+
+        foreach ($schema as $field) {
+            if (($field['type'] ?? null) !== 'image') {
+                continue;
+            }
+
+            $key = $field['key'] ?? null;
+            $fileName = $key ? ($data[$key] ?? null) : null;
+
+            if ($key && is_string($fileName) && $fileName !== '') {
+                $urls[$key] = $this->directoryImageUrl($fileName);
+            }
+        }
+
+        return $urls;
+    }
+
+    private function generateDirectoryImageFileName(Directory $directory, string $fieldKey, string $extension): string
+    {
+        return 'directory_' . $directory->id . '_' . $fieldKey . '_' . Str::lower((string) Str::uuid()) . '.' . $extension;
+    }
+
+    private function directoryImagesPath(): string
+    {
+        return public_path('uploads/directory-images');
+    }
+
+    private function directoryImagePath(string $fileName): string
+    {
+        return $this->directoryImagesPath() . DIRECTORY_SEPARATOR . $fileName;
+    }
+
+    private function directoryImageUrl(string $fileName): string
+    {
+        return asset('uploads/directory-images/' . ltrim($fileName, '/'));
+    }
+
+    private function serializeDirectoryScripts($scripts): array
+    {
+        return collect($scripts)->map(function (DirectoryScript $script) {
+            return [
+                'id' => $script->id,
+                'name' => $script->name,
+                'description' => $script->description,
+                'code' => $script->code,
+                'sort_order' => (int) $script->sort_order,
+            ];
+        })->values()->all();
+    }
+
+    private function serializeSavedFilters(Directory $directory): array
+    {
+        return SavedFilter::query()
+            ->where('user_id', (int) session('user_id'))
+            ->where('entity_type', SavedFilter::ENTITY_DIRECTORY)
+            ->where('entity_id', $directory->id)
+            ->orderBy('name')
+            ->get()
+            ->map(function (SavedFilter $filter) {
+                return [
+                    'id' => $filter->id,
+                    'name' => $filter->name,
+                    'description' => $filter->description,
+                    'visible_fields' => $filter->visible_fields ?? [],
+                    'values' => $filter->values ?? [],
+                ];
+            })
+            ->values()
+            ->all();
     }
 
     private function normalizeValueFilters($rawFilters, array $schema): array
@@ -461,28 +811,63 @@ class DirectoryController extends Controller
             return [];
         }
 
-        $allowedKeys = collect($schema)
+        $allowedKeys = collect(DirectorySchema::expandSchema($schema))
             ->pluck('key')
             ->filter()
             ->map(fn ($key) => (string) $key)
             ->all();
 
         return collect($rawFilters)
-            ->filter(fn ($value, $key) => in_array((string) $key, $allowedKeys, true) && trim((string) $value) !== '')
-            ->map(fn ($value) => trim((string) $value))
+            ->filter(function ($value, $key) use ($allowedKeys) {
+                if (!in_array((string) $key, $allowedKeys, true)) {
+                    return false;
+                }
+
+                if (is_array($value)) {
+                    return trim((string) ($value['value'] ?? '')) !== '';
+                }
+
+                return trim((string) $value) !== '';
+            })
+            ->map(function ($value) {
+                if (!is_array($value)) {
+                    return [
+                        'operator' => 'eq',
+                        'value' => trim((string) $value),
+                        'value_to' => '',
+                    ];
+                }
+
+                $operator = trim((string) ($value['operator'] ?? 'eq'));
+                if (!in_array($operator, ['eq', 'gt', 'lt', 'neq', 'between', 'contains'], true)) {
+                    $operator = 'eq';
+                }
+
+                return [
+                    'operator' => $operator,
+                    'value' => trim((string) ($value['value'] ?? '')),
+                    'value_to' => trim((string) ($value['value_to'] ?? '')),
+                ];
+            })
             ->all();
     }
 
     private function matchesValueFilters(DirectoryValue $value, array $filters, array $schema): bool
     {
         $data = is_array($value->data) ? $value->data : [];
-        $fieldsByKey = collect($schema)->keyBy('key');
+        $fieldsByKey = collect(DirectorySchema::expandSchema($schema))->keyBy('key');
 
         foreach ($filters as $key => $expected) {
             $field = $fieldsByKey->get($key, []);
             $actual = $data[$key] ?? '';
 
-            if (!$this->matchesSingleValueFilter($actual, $expected, $field['type'] ?? 'text')) {
+            if (!$this->matchesSingleValueFilter(
+                $actual,
+                (string) ($expected['value'] ?? ''),
+                $field['type'] ?? 'text',
+                (string) ($expected['operator'] ?? 'eq'),
+                (string) ($expected['value_to'] ?? '')
+            )) {
                 return false;
             }
         }
@@ -490,16 +875,45 @@ class DirectoryController extends Controller
         return true;
     }
 
-    private function matchesSingleValueFilter($actual, string $expected, string $type): bool
+    private function matchesSingleValueFilter($actual, string $expected, string $type, string $operator = 'eq', string $expectedTo = ''): bool
     {
         $actualText = mb_strtolower(trim((string) $actual));
         $expectedText = mb_strtolower(trim($expected));
+        $expectedToText = mb_strtolower(trim($expectedTo));
 
         if ($expectedText === '') {
             return true;
         }
 
-        if (in_array($type, ['list', 'date', 'time', 'directory', 'number'], true)) {
+        if ($operator === 'between' && $expectedToText !== '') {
+            if ($type === 'number') {
+                return is_numeric($actual) && (float) $actual >= (float) $expected && (float) $actual <= (float) $expectedTo;
+            }
+
+            return $actualText >= $expectedText && $actualText <= $expectedToText;
+        }
+
+        if ($operator === 'gt') {
+            return $type === 'number'
+                ? is_numeric($actual) && (float) $actual > (float) $expected
+                : $actualText > $expectedText;
+        }
+
+        if ($operator === 'lt') {
+            return $type === 'number'
+                ? is_numeric($actual) && (float) $actual < (float) $expected
+                : $actualText < $expectedText;
+        }
+
+        if ($operator === 'neq') {
+            return $actualText !== $expectedText;
+        }
+
+        if ($operator === 'contains' && !in_array($type, ['list', 'template_list', 'date', 'time', 'directory', 'parent', 'number'], true)) {
+            return mb_strpos($actualText, $expectedText) !== false;
+        }
+
+        if (in_array($type, ['list', 'template_list', 'date', 'time', 'directory', 'parent', 'number'], true)) {
             return $actualText === $expectedText;
         }
 
@@ -566,7 +980,7 @@ class DirectoryController extends Controller
         $row['sort_order'] = (string) ($value->sort_order ?? 0);
         $row['is_active'] = $value->is_active ? '1' : '0';
 
-        foreach ($schema as $field) {
+        foreach (DirectorySchema::expandSchema($schema) as $field) {
             $key = $field['key'] ?? null;
 
             if (!$key) {
@@ -578,6 +992,8 @@ class DirectoryController extends Controller
 
             if (($field['type'] ?? null) === 'directory') {
                 $row[$key . '_display'] = $this->resolveDirectoryExportReferenceValue($key, $fieldValue, $referenceMap);
+            } elseif (($field['type'] ?? null) === 'template_list') {
+                $row[$key . '_display'] = DirectorySchema::formatFieldValue($field, $fieldValue);
             }
         }
 
@@ -593,11 +1009,13 @@ class DirectoryController extends Controller
             'is_active' => '',
         ];
 
-        foreach ($schema as $field) {
+        foreach (DirectorySchema::expandSchema($schema) as $field) {
             if (!empty($field['key'])) {
                 $row[$field['key']] = '';
 
                 if (($field['type'] ?? null) === 'directory') {
+                    $row[$field['key'] . '_display'] = '';
+                } elseif (($field['type'] ?? null) === 'template_list') {
                     $row[$field['key'] . '_display'] = '';
                 }
             }
@@ -610,7 +1028,7 @@ class DirectoryController extends Controller
     {
         $referenceIds = [];
 
-        foreach ($schema as $field) {
+        foreach (DirectorySchema::expandSchema($schema) as $field) {
             $key = $field['key'] ?? null;
 
             if (!$key || ($field['type'] ?? null) !== 'directory') {
@@ -732,7 +1150,7 @@ class DirectoryController extends Controller
 
     private function buildDirectoryImportPayload(Directory $directory, array $row): array
     {
-        $schema = $directory->schema ?? [];
+        $schema = $this->prepareDirectorySchemaForRuntime($directory, $directory->schema ?? []);
 
         if (empty($schema)) {
             return [

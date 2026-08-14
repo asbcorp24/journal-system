@@ -52,8 +52,24 @@
                     @php
                         $key = $field['key'] ?? null;
                         $data = is_array($value->data) ? $value->data : [];
+                        $templateLines = $key && (($field['type'] ?? null) === 'template_list')
+                            ? \App\Support\DirectorySchema::templateListDisplayLines($field, $data)
+                            : [];
                     @endphp
-                    <td>{{ $key ? \App\Support\DirectorySchema::formatFieldValue($field, $data[$key] ?? null) : '-' }}</td>
+                    <td>
+                        @if($key && ($field['type'] ?? null) === 'template_list')
+                            <div>{{ \App\Support\DirectorySchema::formatFieldValue($field, $data[$key] ?? null) }}</div>
+                            @if(!empty($templateLines))
+                                <div style="margin-top: 4px; font-size: 11px; color: #444;">
+                                    @foreach($templateLines as $line)
+                                        <div>{{ $line['label'] }}: {{ $line['value'] }}</div>
+                                    @endforeach
+                                </div>
+                            @endif
+                        @else
+                            {{ $key ? \App\Support\DirectorySchema::formatFieldValue($field, $data[$key] ?? null) : '-' }}
+                        @endif
+                    </td>
                 @endforeach
             @endif
             <td>{{ $value->code ?: '-' }}</td>

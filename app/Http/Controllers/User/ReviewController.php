@@ -17,21 +17,25 @@ class ReviewController extends Controller
 {
     public function index()
     {
-        if (!in_array(session('user_role'), ['foreman', 'admin'])) {
+        if (!$this->canAccessReviewPage()) {
             abort(403, 'Страница проверки доступна только мастеру и администратору');
         }
 
-        $divisions = Division::whereIn(
-            'id',
-            DivisionTree::managedDivisionIds(session('user_division_id'), session('user_role'))
-        )->orderBy('name')->get();
+        $divisions = collect();
+
+        if (in_array(session('user_role'), ['foreman', 'admin'], true)) {
+            $divisions = Division::whereIn(
+                'id',
+                DivisionTree::managedDivisionIds(session('user_division_id'), session('user_role'))
+            )->orderBy('name')->get();
+        }
 
         return view('user.review.index', compact('divisions'));
     }
 
     public function list(Request $request)
     {
-        if (!in_array(session('user_role'), ['foreman', 'admin'])) {
+        if (!$this->canAccessReviewPage()) {
             abort(403, 'Нет доступа');
         }
 
@@ -58,6 +62,12 @@ class ReviewController extends Controller
             } else {
                 $query->whereIn('division_id', $managedDivisionIds);
             }
+        } elseif ($this->isAssignedApprover()) {
+            $query->whereHas('template', function ($templateQuery) {
+                $templateQuery->where('approver_user_id', session('user_id'));
+            });
+        } else {
+            abort(403, 'РќРµС‚ РґРѕСЃС‚СѓРїР°');
         }
 
         if ($request->filled('journal_template_id')) {
@@ -106,7 +116,7 @@ class ReviewController extends Controller
 
     public function showEntry(JournalEntry $entry)
     {
-        if (!in_array(session('user_role'), ['foreman', 'admin'])) {
+        if (!$this->canAccessReviewPage()) {
             abort(403, 'Нет доступа');
         }
 
@@ -132,7 +142,7 @@ class ReviewController extends Controller
 
     public function approve(Request $request, JournalEntry $entry)
     {
-        if (!in_array(session('user_role'), ['foreman', 'admin'])) {
+        if (!$this->canAccessReviewPage()) {
             abort(403, 'Нет доступа');
         }
 
@@ -187,7 +197,7 @@ class ReviewController extends Controller
 
     public function reject(Request $request, JournalEntry $entry)
     {
-        if (!in_array(session('user_role'), ['foreman', 'admin'])) {
+        if (!$this->canAccessReviewPage()) {
             abort(403, 'Нет доступа');
         }
 
@@ -243,6 +253,10 @@ class ReviewController extends Controller
         $role = session('user_role');
         $divisionId = session('user_division_id');
 
+        if ($this->isAssignedApproverForEntry($entry)) {
+            return;
+        }
+
         if ($role === 'foreman') {
             if ((int)$entry->division_id !== (int)$divisionId) {
                 abort(403, 'Мастер может проверять только записи своего подразделения');
@@ -261,6 +275,36 @@ class ReviewController extends Controller
         }
 
         abort(403, 'Нет доступа');
+    }
+
+    private function canAccessReviewPage(): bool
+    {
+        if (in_array(session('user_role'), ['foreman', 'admin'], true)) {
+            return true;
+        }
+
+        return $this->isAssignedApprover();
+    }
+
+    private function isAssignedApprover(): bool
+    {
+        $userId = (int) session('user_id');
+
+        if ($userId <= 0) {
+            return false;
+        }
+
+        return JournalTemplate::query()
+            ->where('is_active', true)
+            ->where('approver_user_id', $userId)
+            ->exists();
+    }
+
+    private function isAssignedApproverForEntry(JournalEntry $entry): bool
+    {
+        $entry->loadMissing('template');
+
+        return (int) ($entry->template->approver_user_id ?? 0) === (int) session('user_id');
     }
 
     private function getDirectoryValuesForSchema(array $schema)

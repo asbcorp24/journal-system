@@ -18,10 +18,18 @@
 
 @php
     $canViewReportsMenu = session('user_role') === 'admin';
+    $canReviewEntriesMenu = in_array(session('user_role'), ['foreman', 'admin'], true);
 
     if (!$canViewReportsMenu && session('user_id')) {
         $canViewReportsMenu = \App\Models\UserReportPermission::query()
             ->where('user_id', session('user_id'))
+            ->exists();
+    }
+
+    if (!$canReviewEntriesMenu && session('user_id')) {
+        $canReviewEntriesMenu = \App\Models\JournalTemplate::query()
+            ->where('is_active', true)
+            ->where('approver_user_id', session('user_id'))
             ->exists();
     }
 @endphp
@@ -121,7 +129,7 @@
                     Печать журналов
                 </a>
             @endif
-            @if(session('user_role') === 'foreman' || session('user_role') === 'admin')
+            @if($canReviewEntriesMenu)
                 <a href="{{ route('user.review.index') }}"
                    class="{{ request()->routeIs('user.review.*') ? 'active' : '' }}">
                     <i class="bi bi-check2-square"></i>
@@ -214,8 +222,9 @@
             </a>
         @endif
 
-        @if(session('user_role') === 'foreman' || session('user_role') === 'admin')
-            <a href="#">
+        @if($canReviewEntriesMenu)
+            <a href="{{ route('user.review.index') }}"
+               class="{{ request()->routeIs('user.review.*') ? 'active' : '' }}">
                 <i class="bi bi-check2-square"></i>
                 Проверка записей
             </a>

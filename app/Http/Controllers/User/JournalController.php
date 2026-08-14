@@ -9,6 +9,7 @@ use App\Models\Division;
 use App\Models\JournalEntry;
 use App\Models\JournalPrintTemplate;
 use App\Models\JournalTemplate;
+use App\Models\SavedFilter;
 use App\Models\User;
 use App\Support\DirectorySchema;
 use App\Support\DivisionTree;
@@ -76,8 +77,6 @@ class JournalController extends Controller
     private function applyJournalEntryVisibilityScope($query, JournalTemplate $journal, array $access, $requestedDivisionId = null): void
     {
         $role = session('user_role');
-        $ownDivisionId = session('user_division_id');
-        $userId = session('user_id');
         $accessibleDivisionIds = $access['division_ids'];
 
         if ($requestedDivisionId !== null && $requestedDivisionId !== '' && in_array((int) $requestedDivisionId, $accessibleDivisionIds, true)) {
@@ -94,27 +93,7 @@ class JournalController extends Controller
             return;
         }
 
-        $explicitAllDivisionIds = array_values(array_filter($accessibleDivisionIds, function ($divisionId) use ($access, $ownDivisionId) {
-            return (int) $divisionId !== (int) $ownDivisionId
-                || $this->hasExplicitJournalAccessForDivision($access, (int) $divisionId);
-        }));
-
-        $includeOwnAsSelfOnly = $ownDivisionId !== null
-            && in_array((int) $ownDivisionId, $accessibleDivisionIds, true)
-            && !$this->hasExplicitJournalAccessForDivision($access, (int) $ownDivisionId);
-
-        $query->where(function ($scope) use ($explicitAllDivisionIds, $includeOwnAsSelfOnly, $ownDivisionId, $userId) {
-            if ($includeOwnAsSelfOnly) {
-                $scope->orWhere(function ($ownQuery) use ($ownDivisionId, $userId) {
-                    $ownQuery->where('division_id', $ownDivisionId)
-                        ->where('user_id', $userId);
-                });
-            }
-
-            if (!empty($explicitAllDivisionIds)) {
-                $scope->orWhereIn('division_id', $explicitAllDivisionIds);
-            }
-        });
+        $query->whereIn('division_id', $accessibleDivisionIds);
     }
 
     private function isEntryEditable(JournalTemplate $journal, JournalEntry $entry): bool
@@ -209,7 +188,8 @@ class JournalController extends Controller
                 continue;
             }
 
-            $filterValue = $request->input("field_filters.{$key}");
+            $filterPayload = $request->input("field_filters.{$key}");
+            [$operator, $filterValue, $filterValueTo] = $this->normalizeAdvancedFilterPayload($filterPayload);
 
             if ($filterValue === null || $filterValue === '') {
                 continue;
@@ -218,20 +198,103 @@ class JournalController extends Controller
             $jsonPath = '$.' . $key;
 
             if (in_array($type, ['number', 'directory'], true) && is_numeric($filterValue)) {
-                $query->whereRaw('CAST(json_extract(data, ?) AS NUMERIC) = ?', [$jsonPath, $filterValue + 0]);
+                $this->applyNumericJsonFilter($query, $jsonPath, $operator, $filterValue, $filterValueTo);
                 continue;
             }
 
             if (in_array($type, ['date', 'time', 'list', 'directory_text'], true)) {
-                $query->whereRaw('json_extract(data, ?) = ?', [$jsonPath, (string)$filterValue]);
+                $this->applyTextJsonFilter($query, $jsonPath, $operator, $filterValue, $filterValueTo, false);
                 continue;
             }
 
+            $this->applyTextJsonFilter($query, $jsonPath, $operator, $filterValue, $filterValueTo, true);
+        }
+    }
+
+    private function normalizeAdvancedFilterPayload($payload): array
+    {
+        if (!is_array($payload)) {
+            $value = trim((string) $payload);
+            return ['eq', $value, null];
+        }
+
+        $operator = trim((string) ($payload['operator'] ?? 'eq'));
+        $value = trim((string) ($payload['value'] ?? ''));
+        $valueTo = trim((string) ($payload['value_to'] ?? ''));
+
+        if (!in_array($operator, ['eq', 'gt', 'lt', 'neq', 'between', 'contains'], true)) {
+            $operator = 'eq';
+        }
+
+        return [$operator, $value, $valueTo];
+    }
+
+    private function applyNumericJsonFilter($query, string $jsonPath, string $operator, $value, $valueTo = null): void
+    {
+        $column = 'CAST(json_extract(data, ?) AS NUMERIC)';
+
+        if ($operator === 'gt') {
+            $query->whereRaw($column . ' > ?', [$jsonPath, $value + 0]);
+            return;
+        }
+
+        if ($operator === 'lt') {
+            $query->whereRaw($column . ' < ?', [$jsonPath, $value + 0]);
+            return;
+        }
+
+        if ($operator === 'neq') {
+            $query->whereRaw($column . ' != ?', [$jsonPath, $value + 0]);
+            return;
+        }
+
+        if ($operator === 'between' && $valueTo !== null && $valueTo !== '' && is_numeric($valueTo)) {
+            $query->whereRaw($column . ' BETWEEN ? AND ?', [$jsonPath, $value + 0, $valueTo + 0]);
+            return;
+        }
+
+        $query->whereRaw($column . ' = ?', [$jsonPath, $value + 0]);
+    }
+
+    private function applyTextJsonFilter($query, string $jsonPath, string $operator, string $value, ?string $valueTo = null, bool $supportsContains = false): void
+    {
+        if ($operator === 'contains' && $supportsContains) {
             $query->whereRaw('LOWER(COALESCE(json_extract(data, ?), \'\')) LIKE ?', [
                 $jsonPath,
-                '%' . mb_strtolower((string)$filterValue) . '%',
+                '%' . mb_strtolower($value) . '%',
             ]);
+            return;
         }
+
+        if ($operator === 'gt') {
+            $query->whereRaw('json_extract(data, ?) > ?', [$jsonPath, $value]);
+            return;
+        }
+
+        if ($operator === 'lt') {
+            $query->whereRaw('json_extract(data, ?) < ?', [$jsonPath, $value]);
+            return;
+        }
+
+        if ($operator === 'neq') {
+            $query->whereRaw('json_extract(data, ?) != ?', [$jsonPath, $value]);
+            return;
+        }
+
+        if ($operator === 'between' && $valueTo !== null && $valueTo !== '') {
+            $query->whereRaw('json_extract(data, ?) BETWEEN ? AND ?', [$jsonPath, $value, $valueTo]);
+            return;
+        }
+
+        if ($supportsContains) {
+            $query->whereRaw('LOWER(COALESCE(json_extract(data, ?), \'\')) LIKE ?', [
+                $jsonPath,
+                '%' . mb_strtolower($value) . '%',
+            ]);
+            return;
+        }
+
+        $query->whereRaw('json_extract(data, ?) = ?', [$jsonPath, $value]);
     }
 
     public function show(JournalTemplate $journal)
@@ -291,6 +354,23 @@ class JournalController extends Controller
             ->where('is_active', true)
             ->orderBy('name')
             ->get();
+        $savedFilters = SavedFilter::query()
+            ->where('user_id', (int) session('user_id'))
+            ->where('entity_type', SavedFilter::ENTITY_JOURNAL)
+            ->where('entity_id', $journal->id)
+            ->orderBy('name')
+            ->get()
+            ->map(function (SavedFilter $filter) {
+                return [
+                    'id' => $filter->id,
+                    'name' => $filter->name,
+                    'description' => $filter->description,
+                    'visible_fields' => $filter->visible_fields ?? [],
+                    'values' => $filter->values ?? [],
+                ];
+            })
+            ->values()
+            ->all();
 
         return view('user.journals.show', compact(
             'journal',
@@ -304,7 +384,8 @@ class JournalController extends Controller
             'canShowDeleted',
             'showDivisionFilter',
             'showEntryDivisionSelector',
-            'printTemplates'
+            'printTemplates',
+            'savedFilters'
         ));
     }
     public function print(Request $request, JournalTemplate $journal)

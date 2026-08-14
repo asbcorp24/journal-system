@@ -224,6 +224,10 @@ class ReportTemplateController extends Controller
                 'nullable',
                 'boolean',
             ],
+            'params_schema.*.compare_operator' => [
+                'nullable',
+                Rule::in(['eq', 'neq', 'gt', 'gte', 'lt', 'lte']),
+            ],
             'params_schema.*.directory_id' => [
                 'nullable',
                 'exists:directories,id',

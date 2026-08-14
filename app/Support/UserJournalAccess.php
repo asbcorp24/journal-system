@@ -18,13 +18,26 @@ class UserJournalAccess
         $journalDivisionIds = array_values(array_unique($journalDivisionIds));
 
         $baseDivisionIds = [];
+        $baseFullDivisionIds = [];
+
         if ($role === 'admin') {
             $baseDivisionIds = array_values(array_intersect(
                 $journalDivisionIds,
                 DivisionTree::managedDivisionIds($divisionId, $role)
             ));
+            $baseFullDivisionIds = $baseDivisionIds;
+        } elseif ($role === 'foreman') {
+            $baseDivisionIds = array_values(array_intersect(
+                $journalDivisionIds,
+                DivisionTree::descendantsAndSelfIds($divisionId)
+            ));
+
+            if ($divisionId !== null && in_array((int) $divisionId, $baseDivisionIds, true)) {
+                $baseFullDivisionIds = [(int) $divisionId];
+            }
         } elseif ($divisionId !== null && in_array((int) $divisionId, $journalDivisionIds, true)) {
             $baseDivisionIds = [(int) $divisionId];
+            $baseFullDivisionIds = $baseDivisionIds;
         }
 
         $explicitViewDivisionIds = [];
@@ -55,7 +68,9 @@ class UserJournalAccess
 
         foreach ($baseDivisionIds as $id) {
             $accessByDivision[$id] = [
-                'mode' => UserJournalPermission::ACCESS_FULL,
+                'mode' => in_array((int) $id, $baseFullDivisionIds, true)
+                    ? UserJournalPermission::ACCESS_FULL
+                    : UserJournalPermission::ACCESS_VIEW,
                 'explicit' => false,
             ];
         }
@@ -94,6 +109,7 @@ class UserJournalAccess
             'division_ids' => $viewDivisionIds,
             'full_division_ids' => $fullDivisionIds,
             'base_division_ids' => array_values(array_unique($baseDivisionIds)),
+            'base_full_division_ids' => array_values(array_unique($baseFullDivisionIds)),
             'explicit_view_division_ids' => $explicitViewDivisionIds,
             'explicit_full_division_ids' => $explicitFullDivisionIds,
             'access_by_division' => $accessByDivision,

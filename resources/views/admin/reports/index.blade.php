@@ -883,6 +883,7 @@ ORDER BY je.entry_date DESC, je.id DESC
                 label: data?.label || '',
                 type: data?.type || 'string',
                 required: !!data?.required,
+                compare_operator: data?.compare_operator || 'eq',
                 directory_id: data?.directory_id || '',
                 source: data?.source || '',
                 options: data?.options || [],
@@ -1010,7 +1011,8 @@ ORDER BY je.entry_date DESC, je.id DESC
                     key: param.key,
                     label: param.label,
                     type: param.type,
-                    required: param.required ? 1 : 0
+                    required: param.required ? 1 : 0,
+                    compare_operator: param.compare_operator || 'eq'
                 };
 
                 if (param.type === 'directory' || param.type === 'directory_text') {
@@ -1417,6 +1419,316 @@ ORDER BY je.entry_date DESC, je.id DESC
             applyGeneratedParamsSchema(buildAutoParamsSchema());
             showToast('SQL и параметры собраны', 'success');
         }
+
+        function renderBuilderColumns() {
+            let columns = getAllBuilderColumns();
+
+            if (!columns.length) {
+                $('#builderColumnsBox').html('<div class="col-12 text-secondary small">Сначала выберите журнал.</div>');
+                return;
+            }
+
+            let html = '';
+
+            columns.forEach(function (column, index) {
+                let checked = index < 5 ? 'checked' : '';
+
+                html += `
+                    <div class="col-md-6 col-lg-4">
+                        <div class="border rounded p-3 h-100">
+                            <label class="d-flex align-items-center gap-2 fw-semibold mb-2">
+                                <input type="checkbox" class="form-check-input builder-column-checkbox" value="${escapeHtml(column.key)}" ${checked}>
+                                <span>${escapeHtml(column.label)}</span>
+                            </label>
+                            <label class="d-flex align-items-center gap-2 small text-secondary">
+                                <input type="checkbox" class="form-check-input builder-param-checkbox" data-key="${escapeHtml(column.key)}">
+                                <span>Добавить в параметры</span>
+                            </label>
+                            <div class="mt-2">
+                                <select class="form-select form-select-sm builder-param-operator" data-key="${escapeHtml(column.key)}" disabled>
+                                    <option value="eq">Равно</option>
+                                    <option value="neq">Не равно</option>
+                                    <option value="gt">Больше</option>
+                                    <option value="gte">Больше или равно</option>
+                                    <option value="lt">Меньше</option>
+                                    <option value="lte">Меньше или равно</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+
+            $('#builderColumnsBox').html(html);
+        }
+
+        function getBuilderSelectedParamColumns() {
+            let columnsByKey = {};
+            getAllBuilderColumns().forEach(function (column) {
+                columnsByKey[column.key] = column;
+            });
+
+            return $('.builder-param-checkbox:checked').map(function () {
+                let key = $(this).data('key');
+                let column = columnsByKey[key];
+
+                if (!column) {
+                    return null;
+                }
+
+                return {
+                    column: column,
+                    compare_operator: $(`.builder-param-operator[data-key="${key}"]`).val() || 'eq'
+                };
+            }).get().filter(Boolean);
+        }
+
+        function buildBuilderFieldParam(selection) {
+            let column = selection.column;
+            let param = {
+                key: `filter_${column.key}`,
+                label: column.label,
+                type: 'string',
+                required: 0,
+                compare_operator: selection.compare_operator || 'eq'
+            };
+
+            if (column.key === 'entry_id' || column.type === 'number' || column.type === 'calc') {
+                param.type = 'number';
+                return param;
+            }
+
+            if (column.key === 'entry_date' || column.type === 'date') {
+                param.type = 'date';
+                return param;
+            }
+
+            if (column.type === 'time') {
+                param.type = 'time';
+                return param;
+            }
+
+            if (column.type === 'directory') {
+                param.type = 'directory';
+                param.directory_id = column.directory_id || null;
+                param.source = column.source || '';
+                return param;
+            }
+
+            if (column.type === 'directory_text') {
+                param.type = 'directory_text';
+                param.directory_id = column.directory_id || null;
+                param.source = column.source || '';
+                return param;
+            }
+
+            if (column.type === 'list') {
+                param.type = 'list';
+                param.options = column.options || [];
+                return param;
+            }
+
+            if (column.key === 'status') {
+                param.type = 'list';
+                param.options = ['submitted', 'approved', 'rejected'];
+            }
+
+            return param;
+        }
+
+        function buildBuilderFieldSqlCondition(selection) {
+            let column = selection.column;
+            let expr = column.sql || 'NULL';
+            let binding = `:filter_${column.key}`;
+            let operatorMap = {
+                eq: '=',
+                neq: '!=',
+                gt: '>',
+                gte: '>=',
+                lt: '<',
+                lte: '<='
+            };
+            let sqlOperator = operatorMap[selection.compare_operator || 'eq'] || '=';
+
+            return `AND (${binding} IS NULL OR ${expr} ${sqlOperator} ${binding})`;
+        }
+
+        function buildAutoParamsSchema(extraColumns = []) {
+            let schema = [
+                {
+                    key: 'date_from',
+                    label: 'Дата от',
+                    type: 'date',
+                    required: 0
+                },
+                {
+                    key: 'date_to',
+                    label: 'Дата до',
+                    type: 'date',
+                    required: 0
+                },
+                {
+                    key: 'division_id',
+                    label: 'Подразделение',
+                    type: 'directory',
+                    source: 'divisions',
+                    required: 0
+                }
+            ];
+
+            extraColumns.forEach(function (selection) {
+                let param = buildBuilderFieldParam(selection);
+
+                if (!schema.find(item => item.key === param.key)) {
+                    schema.push(param);
+                }
+            });
+
+            return schema;
+        }
+
+        function generateSqlFromBuilder() {
+            let journal = getSelectedJournal();
+
+            if (!journal) {
+                showToast('Выберите журнал для конструктора', 'warning');
+                return;
+            }
+
+            let allColumns = getAllBuilderColumns();
+            let columnsByKey = {};
+            allColumns.forEach(function (column) {
+                columnsByKey[column.key] = column;
+            });
+
+            let selectedParamColumns = getBuilderSelectedParamColumns();
+            let extraWhereSql = selectedParamColumns
+                .map(function (selection) {
+                    return '  ' + buildBuilderFieldSqlCondition(selection);
+                })
+                .join('\n');
+
+            let whereSql = `
+WHERE je.journal_template_id = ${Number(journal.id)}
+  AND (:date_from IS NULL OR je.entry_date >= :date_from)
+  AND (:date_to IS NULL OR je.entry_date <= :date_to)
+  AND (:division_id IS NULL OR je.division_id = :division_id)
+${extraWhereSql ? extraWhereSql : ''}
+`.trim();
+
+            let fromSql = `
+FROM journal_entries je
+LEFT JOIN divisions d ON d.id = je.division_id
+LEFT JOIN users u ON u.id = je.user_id
+`.trim();
+
+            if ($('#builderMode').val() === 'summary') {
+                let groupKey = $('#builderGroupField').val();
+                let aggregateFunction = $('#builderAggregateFunction').val() || 'sum';
+                let aggregateFieldKey = $('#builderSumField').val();
+                let groupColumn = columnsByKey[groupKey];
+                let aggregateColumn = columnsByKey[aggregateFieldKey];
+                let functionMeta = getAggregateFunctions()[aggregateFunction] || getAggregateFunctions().sum;
+
+                if (!groupColumn) {
+                    showToast('Выберите поле группировки', 'warning');
+                    return;
+                }
+
+                if (functionMeta.needsField && !aggregateColumn) {
+                    showToast('Выберите поле для расчётной функции', 'warning');
+                    return;
+                }
+
+                if (functionMeta.numericOnly && !['number', 'calc'].includes(aggregateColumn?.type || '')) {
+                    showToast('Для этой функции нужно числовое поле', 'warning');
+                    return;
+                }
+
+                let groupExpr = groupColumn.sql || 'NULL';
+                let aggregateExpr = 'COUNT(*)';
+
+                if (aggregateFunction === 'count_distinct') {
+                    aggregateExpr = `COUNT(DISTINCT ${aggregateColumn.sql || 'NULL'})`;
+                } else if (aggregateFunction === 'count') {
+                    aggregateExpr = 'COUNT(*)';
+                } else if (aggregateFunction === 'sum') {
+                    aggregateExpr = `SUM(${aggregateColumn.sql_numeric || aggregateColumn.sql || '0'})`;
+                } else if (aggregateFunction === 'avg') {
+                    aggregateExpr = `AVG(${aggregateColumn.sql_numeric || aggregateColumn.sql || '0'})`;
+                } else if (aggregateFunction === 'min') {
+                    aggregateExpr = `MIN(${aggregateColumn.sql || 'NULL'})`;
+                } else if (aggregateFunction === 'max') {
+                    aggregateExpr = `MAX(${aggregateColumn.sql || 'NULL'})`;
+                }
+
+                let sql = `
+SELECT
+    COALESCE(${groupExpr}, 'Без значения') AS group_value,
+    ${aggregateExpr} AS total_value,
+    COUNT(*) AS entries_count
+${fromSql}
+${whereSql}
+GROUP BY COALESCE(${groupExpr}, '')
+ORDER BY total_value DESC, group_value ASC
+`.trim();
+
+                $('#sqlQuery').val(sql);
+
+                if (!$('#reportName').val().trim()) {
+                    let sourceLabel = aggregateColumn ? (aggregateColumn.label || aggregateColumn.key) : 'строки';
+                    $('#reportName').val(`${functionMeta.label}: ${sourceLabel} / ${journal.name}`);
+                }
+            } else {
+                let selectedKeys = $('.builder-column-checkbox:checked').map(function () {
+                    return $(this).val();
+                }).get();
+
+                if (!selectedKeys.length) {
+                    showToast('Выберите хотя бы одну колонку отчёта', 'warning');
+                    return;
+                }
+
+                let selectSql = selectedKeys.map(function (key) {
+                    let column = columnsByKey[key];
+                    let expr = column ? column.sql : null;
+                    let alias = column ? column.key : key;
+                    return `${expr} AS "${alias}"`;
+                }).filter(Boolean).join(",\n    ");
+
+                let sql = `
+SELECT
+    ${selectSql}
+${fromSql}
+${whereSql}
+ORDER BY je.entry_date DESC, je.id DESC
+`.trim();
+
+                $('#sqlQuery').val(sql);
+
+                if (!$('#reportName').val().trim()) {
+                    $('#reportName').val(`Журнал: ${journal.name}`);
+                }
+            }
+
+            applyGeneratedParamsSchema(buildAutoParamsSchema(selectedParamColumns));
+            showToast('SQL и параметры собраны', 'success');
+        }
+
+        $(document).on('change', '.builder-column-checkbox', function () {
+            let key = $(this).val();
+            let paramCheckbox = $(`.builder-param-checkbox[data-key="${key}"]`);
+
+            if (!$(this).is(':checked')) {
+                paramCheckbox.prop('checked', false);
+                $(`.builder-param-operator[data-key="${key}"]`).prop('disabled', true).val('eq');
+            }
+        });
+
+        $(document).on('change', '.builder-param-checkbox', function () {
+            let key = $(this).data('key');
+            $(`.builder-param-operator[data-key="${key}"]`).prop('disabled', !$(this).is(':checked'));
+        });
 
         renderBuilder();
         renderParams();
