@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\User;
 
 use App\Http\Controllers\Controller;
+use App\Models\Directory;
 use App\Models\DirectoryValue;
 use App\Models\Division;
 use App\Models\JournalEntry;
@@ -109,7 +110,51 @@ class DashboardController extends Controller
             'deleted' => $dateLabels->map(fn ($date) => (int) ($dailyDeleted[$date] ?? 0))->all(),
         ];
 
+        $directoryScopes = $this->accessibleDirectoryScopes($selectedDivisionId);
+
+        $directoryValuesTodayCount = $this->buildScopedDirectoryValuesQuery($directoryScopes)
+            ->whereDate('created_at', $today)
+            ->count();
+
+        $directoryUpdatedPeriodCount = $this->buildScopedDirectoryValuesQuery($directoryScopes)
+            ->whereDate('updated_at', '>=', $dateFrom)
+            ->whereColumn('updated_at', '!=', 'created_at')
+            ->count();
+
+        $directoryDeletedPeriodCount = $this->buildScopedDirectoryValuesQuery($directoryScopes, true)
+            ->whereNotNull('deleted_at')
+            ->whereDate('deleted_at', '>=', $dateFrom)
+            ->count();
+
+        $directoryDailyCreated = $this->buildScopedDirectoryValuesQuery($directoryScopes)
+            ->selectRaw('date(created_at) as chart_date, count(*) as total')
+            ->whereDate('created_at', '>=', $dateFrom)
+            ->groupByRaw('date(created_at)')
+            ->pluck('total', 'chart_date');
+
+        $directoryDailyUpdated = $this->buildScopedDirectoryValuesQuery($directoryScopes)
+            ->selectRaw('date(updated_at) as chart_date, count(*) as total')
+            ->whereDate('updated_at', '>=', $dateFrom)
+            ->whereColumn('updated_at', '!=', 'created_at')
+            ->groupByRaw('date(updated_at)')
+            ->pluck('total', 'chart_date');
+
+        $directoryDailyDeleted = $this->buildScopedDirectoryValuesQuery($directoryScopes, true)
+            ->selectRaw('date(deleted_at) as chart_date, count(*) as total')
+            ->whereNotNull('deleted_at')
+            ->whereDate('deleted_at', '>=', $dateFrom)
+            ->groupByRaw('date(deleted_at)')
+            ->pluck('total', 'chart_date');
+
+        $directoryDailyChart = [
+            'labels' => $dateLabels->all(),
+            'created' => $dateLabels->map(fn ($date) => (int) ($directoryDailyCreated[$date] ?? 0))->all(),
+            'updated' => $dateLabels->map(fn ($date) => (int) ($directoryDailyUpdated[$date] ?? 0))->all(),
+            'deleted' => $dateLabels->map(fn ($date) => (int) ($directoryDailyDeleted[$date] ?? 0))->all(),
+        ];
+
         $problemDivisions = $this->buildProblemDivisions($scopes, $dateFrom);
+        $problemDirectories = $this->buildProblemDirectories($directoryScopes, $dateFrom);
         $divisions = session('user_role') === 'admin'
             ? Division::query()->whereIn('id', $availableDivisionIds)->orderBy('name')->get()
             : collect();
@@ -118,6 +163,9 @@ class DashboardController extends Controller
             'entries_today' => $entriesTodayCount,
             'rejected_period' => $rejectedPeriodCount,
             'deleted_period' => $deletedPeriodCount,
+            'directory_values_today' => $directoryValuesTodayCount,
+            'directory_updated_period' => $directoryUpdatedPeriodCount,
+            'directory_deleted_period' => $directoryDeletedPeriodCount,
         ];
 
         return view('user.leader-dashboard', [
@@ -126,7 +174,9 @@ class DashboardController extends Controller
             'selectedDivisionId' => $selectedDivisionId,
             'divisions' => $divisions,
             'dailyChart' => $dailyChart,
+            'directoryDailyChart' => $directoryDailyChart,
             'problemDivisions' => $problemDivisions,
+            'problemDirectories' => $problemDirectories,
         ]);
     }
 
@@ -189,6 +239,53 @@ class DashboardController extends Controller
             ->values();
     }
 
+    private function accessibleDirectories(): Collection
+    {
+        $divisionId = session('user_division_id');
+        $managedDivisionIds = \App\Support\DivisionTree::managedDivisionIds($divisionId, session('user_role'));
+
+        return Directory::query()
+            ->with('divisions:id,name')
+            ->where(function (Builder $query) use ($managedDivisionIds) {
+                $query->whereDoesntHave('divisions');
+
+                if (!empty($managedDivisionIds)) {
+                    $query->orWhereHas('divisions', function (Builder $divisionQuery) use ($managedDivisionIds) {
+                        $divisionQuery->whereIn('divisions.id', $managedDivisionIds);
+                    });
+                }
+            })
+            ->orderBy('name')
+            ->get();
+    }
+
+    private function accessibleDirectoryScopes(?int $selectedDivisionId = null): Collection
+    {
+        return $this->accessibleDirectories()
+            ->map(function (Directory $directory) use ($selectedDivisionId) {
+                $divisionIds = $directory->divisions
+                    ->pluck('id')
+                    ->map(fn ($id) => (int) $id)
+                    ->filter(fn ($id) => $id > 0)
+                    ->values();
+
+                if ($selectedDivisionId !== null && $divisionIds->isNotEmpty()) {
+                    $divisionIds = $divisionIds->filter(fn ($id) => $id === $selectedDivisionId)->values();
+                }
+
+                if ($selectedDivisionId !== null && $directory->divisions->isNotEmpty() && $divisionIds->isEmpty()) {
+                    return null;
+                }
+
+                return [
+                    'directory' => $directory,
+                    'division_ids' => $divisionIds->all(),
+                ];
+            })
+            ->filter()
+            ->values();
+    }
+
     private function buildScopedEntriesQuery(Collection $scopes, bool $withTrashed = false): Builder
     {
         $query = $withTrashed ? JournalEntry::query()->withTrashed() : JournalEntry::query();
@@ -206,6 +303,17 @@ class DashboardController extends Controller
                 });
             }
         });
+    }
+
+    private function buildScopedDirectoryValuesQuery(Collection $scopes, bool $withTrashed = false): Builder
+    {
+        $query = $withTrashed ? DirectoryValue::query()->withTrashed() : DirectoryValue::query();
+
+        if ($scopes->isEmpty()) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        return $query->whereIn('directory_id', $scopes->pluck('directory.id')->map(fn ($id) => (int) $id)->all());
     }
 
     private function buildWarehouseStockData(Collection $scopes): array
@@ -355,6 +463,61 @@ class DashboardController extends Controller
                     'division_name' => (string) ($divisionNames[(int) $divisionId] ?? ('Подразделение #' . $divisionId)),
                     'entries_count' => $entriesCount,
                     'rejected_count' => $rejectedCount,
+                    'deleted_count' => $deletedCount,
+                    'problem_score' => $problemScore,
+                ];
+            })
+            ->sortByDesc('problem_score')
+            ->take(10)
+            ->values();
+    }
+
+    private function buildProblemDirectories(Collection $scopes, string $dateFrom): Collection
+    {
+        $directoryIds = $scopes->pluck('directory.id')->map(fn ($id) => (int) $id)->values();
+        $directoryNames = Directory::query()
+            ->whereIn('id', $directoryIds)
+            ->pluck('name', 'id');
+
+        $values = $this->buildScopedDirectoryValuesQuery($scopes, true)
+            ->where(function (Builder $query) use ($dateFrom) {
+                $query
+                    ->whereDate('created_at', '>=', $dateFrom)
+                    ->orWhere(function (Builder $subQuery) use ($dateFrom) {
+                        $subQuery->whereDate('updated_at', '>=', $dateFrom)
+                            ->whereColumn('updated_at', '!=', 'created_at');
+                    })
+                    ->orWhere(function (Builder $subQuery) use ($dateFrom) {
+                        $subQuery->whereNotNull('deleted_at')
+                            ->whereDate('deleted_at', '>=', $dateFrom);
+                    });
+            })
+            ->get(['directory_id', 'created_at', 'updated_at', 'deleted_at']);
+
+        return $values
+            ->groupBy('directory_id')
+            ->map(function (Collection $directoryValues, $directoryId) use ($directoryNames, $dateFrom) {
+                $createdCount = $directoryValues->filter(function (DirectoryValue $value) use ($dateFrom) {
+                    return $value->created_at !== null
+                        && $value->created_at->toDateString() >= $dateFrom;
+                })->count();
+                $updatedCount = $directoryValues->filter(function (DirectoryValue $value) use ($dateFrom) {
+                    return $value->updated_at !== null
+                        && $value->created_at !== null
+                        && !$value->updated_at->equalTo($value->created_at)
+                        && $value->updated_at->toDateString() >= $dateFrom;
+                })->count();
+                $deletedCount = $directoryValues->filter(function (DirectoryValue $value) use ($dateFrom) {
+                    return $value->deleted_at !== null
+                        && $value->deleted_at->toDateString() >= $dateFrom;
+                })->count();
+                $problemScore = $updatedCount + ($deletedCount * 2);
+
+                return [
+                    'directory_id' => (int) $directoryId,
+                    'directory_name' => (string) ($directoryNames[(int) $directoryId] ?? ('Справочник #' . $directoryId)),
+                    'created_count' => $createdCount,
+                    'updated_count' => $updatedCount,
                     'deleted_count' => $deletedCount,
                     'problem_score' => $problemScore,
                 ];
