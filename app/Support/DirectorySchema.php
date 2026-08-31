@@ -973,12 +973,31 @@ class DirectorySchema
             $field = $fieldsByKey[$key] ?? [];
             $value = $values[$key] ?? null;
 
-            return self::stringifyTemplateValue(is_array($field) ? $field : [], $value);
+            return self::stringifyTemplateValue(is_array($field) ? $field : [], $value, $values);
         }, $template) ?? $template;
     }
 
-    private static function stringifyTemplateValue(array $field, $value): string
+    private static function stringifyTemplateValue(array $field, $value, array $values = []): string
     {
+        if (($field['type'] ?? null) === 'template_list') {
+            $parts = [];
+            $selectedName = self::formatFieldValue($field, $value);
+
+            if ($selectedName !== '' && $selectedName !== '-') {
+                $parts[] = trim($selectedName);
+            }
+
+            foreach (self::templateListDisplayLines($field, $values) as $line) {
+                $lineValue = trim((string) ($line['value'] ?? ''));
+
+                if ($lineValue !== '') {
+                    $parts[] = $lineValue;
+                }
+            }
+
+            return trim(implode(' ', array_values(array_unique(array_filter($parts)))));
+        }
+
         if ($value === null || $value === '' || is_array($value)) {
             return '';
         }

@@ -452,6 +452,53 @@
             }).filter(Boolean);
         }
 
+        function stringifyTemplateFieldValue(field, value, data = {}) {
+            if (field.type === 'template_list') {
+                let selectedItem = getTemplateListSelectedItem(field, data);
+                let parts = [];
+
+                if (selectedItem && selectedItem.name) {
+                    parts.push(String(selectedItem.name).trim());
+                }
+
+                getTemplateListDisplayLines(field, data).forEach(function (line) {
+                    let lineValue = String(line.value || '').trim();
+                    if (lineValue) {
+                        parts.push(lineValue);
+                    }
+                });
+
+                return [...new Set(parts.filter(Boolean))].join(' ').trim();
+            }
+
+            if (value === null || value === undefined) {
+                return '';
+            }
+
+            return String(value);
+        }
+
+        function buildRuntimeFieldValues(schema, data = {}) {
+            let runtimeData = Object.assign({}, data || {});
+
+            (schema || []).forEach(function (field) {
+                if (field.type !== 'template') {
+                    return;
+                }
+
+                let template = String(field.template || '');
+                runtimeData[field.key] = template.replace(/{{\s*([a-zA-Z][a-zA-Z0-9_]*)\s*}}/g, function (_, key) {
+                    let sourceField = (schema || []).find(function (item) {
+                        return String(item.key || '') === String(key || '');
+                    }) || {};
+
+                    return stringifyTemplateFieldValue(sourceField, runtimeData[key], runtimeData);
+                });
+            });
+
+            return runtimeData;
+        }
+
         function collectTemplateListRowBlocks(schema, data = {}) {
             let blocks = [];
 
@@ -1652,9 +1699,11 @@
                 return;
             }
 
+            let sourceData = item && item.data ? item.data : {};
+            let runtimeData = buildRuntimeFieldValues(schema, sourceData);
             let html = '';
             let tabs = groupSchemaFieldsByTab(schema);
-            let dynamicTabs = collectTemplateListDynamicFields(schema, item && item.data ? item.data : {});
+            let dynamicTabs = collectTemplateListDynamicFields(schema, sourceData);
 
             if (dynamicTabs.length || tabs.length > 1 || tabs[0].name !== 'Основное') {
                 html += '<ul class="nav nav-tabs mb-3" role="tablist">';
@@ -1685,8 +1734,8 @@
                     let active = index === 0 ? 'show active' : '';
                     html += `<div class="tab-pane fade ${active}" id="directory-value-tab-${index}" role="tabpanel">`;
                     tab.fields.forEach(function (field) {
-                        let value = item && item.data && item.data[field.key] !== undefined && item.data[field.key] !== null
-                            ? item.data[field.key]
+                        let value = runtimeData[field.key] !== undefined && runtimeData[field.key] !== null
+                            ? runtimeData[field.key]
                             : '';
                         let imageUrl = item && item.image_urls && item.image_urls[field.key]
                             ? item.image_urls[field.key]
@@ -1700,8 +1749,8 @@
                     let targetIndex = tabs.length + index;
                     html += `<div class="tab-pane fade" id="directory-value-tab-${targetIndex}" role="tabpanel">`;
                     tab.fields.forEach(function (field) {
-                        let value = item && item.data && item.data[field.key] !== undefined && item.data[field.key] !== null
-                            ? item.data[field.key]
+                        let value = runtimeData[field.key] !== undefined && runtimeData[field.key] !== null
+                            ? runtimeData[field.key]
                             : '';
                         html += renderDirectoryValueFieldControl(field, value, '', false);
                     });
@@ -1711,8 +1760,8 @@
                 html += '</div>';
             } else {
                 schema.forEach(function (field) {
-                    let value = item && item.data && item.data[field.key] !== undefined && item.data[field.key] !== null
-                        ? item.data[field.key]
+                    let value = runtimeData[field.key] !== undefined && runtimeData[field.key] !== null
+                        ? runtimeData[field.key]
                         : '';
                     let imageUrl = item && item.image_urls && item.image_urls[field.key]
                         ? item.image_urls[field.key]

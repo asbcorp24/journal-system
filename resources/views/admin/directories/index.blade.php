@@ -851,6 +851,53 @@
             }).filter(Boolean);
         }
 
+        function stringifyAdminTemplateFieldValue(field, value, data = {}) {
+            if (field.type === 'template_list') {
+                let selectedItem = getAdminTemplateListSelectedItem(field, data);
+                let parts = [];
+
+                if (selectedItem && selectedItem.name) {
+                    parts.push(String(selectedItem.name).trim());
+                }
+
+                getAdminTemplateListDisplayLines(field, data).forEach(function (line) {
+                    let lineValue = String(line.value || '').trim();
+                    if (lineValue) {
+                        parts.push(lineValue);
+                    }
+                });
+
+                return [...new Set(parts.filter(Boolean))].join(' ').trim();
+            }
+
+            if (value === null || value === undefined) {
+                return '';
+            }
+
+            return String(value);
+        }
+
+        function buildAdminRuntimeFieldValues(schema, data = {}) {
+            let runtimeData = Object.assign({}, data || {});
+
+            (schema || []).forEach(function (field) {
+                if (field.type !== 'template') {
+                    return;
+                }
+
+                let template = String(field.template || '');
+                runtimeData[field.key] = template.replace(/{{\s*([a-zA-Z][a-zA-Z0-9_]*)\s*}}/g, function (_, key) {
+                    let sourceField = (schema || []).find(function (item) {
+                        return String(item.key || '') === String(key || '');
+                    }) || {};
+
+                    return stringifyAdminTemplateFieldValue(sourceField, runtimeData[key], runtimeData);
+                });
+            });
+
+            return runtimeData;
+        }
+
         function collectAdminTemplateListRowBlocks(schema, data = {}) {
             let blocks = [];
 
@@ -2171,6 +2218,8 @@
                                         <option value="directory" ${field.type === 'directory' ? 'selected' : ''}>Справочник</option>
                                         <option value="parent" ${field.type === 'parent' ? 'selected' : ''}>Родитель</option>
                                         <option value="calc" ${field.type === 'calc' ? 'selected' : ''}>Формула</option>
+                                        <option value="template" ${field.type === 'template' ? 'selected' : ''}>Шаблон</option>
+                                        <option value="template_list" ${field.type === 'template_list' ? 'selected' : ''}>Список шаблонов</option>
                                     </select>
                                 </div>
 
@@ -2299,6 +2348,10 @@
 
                 if ((field.type || '') === 'template') {
                     typeSelect.val('template');
+                }
+
+                if ((field.type || '') === 'template_list') {
+                    typeSelect.val('template_list');
                 }
 
                 if (!card.find('.schema-template-block').length) {
@@ -2625,6 +2678,7 @@
 
             let tabs = groupSchemaFieldsByTab(schema);
             let dynamicTabs = collectTemplateListDynamicFields(schema, data);
+            let runtimeData = buildAdminRuntimeFieldValues(schema, data);
             let html = '';
 
             if (dynamicTabs.length || tabs.length > 1 || tabs[0].name !== 'Основное') {
@@ -2656,7 +2710,7 @@
                     let active = index === 0 ? 'show active' : '';
                     html += `<div class="tab-pane fade ${active}" id="directory-value-tab-${index}" role="tabpanel">`;
                     tab.fields.forEach(function (field) {
-                        html += renderValueFieldControl(field, data[field.key] ?? '', imageUrls[field.key] || '', !!removeImages[field.key]);
+                        html += renderValueFieldControl(field, runtimeData[field.key] ?? '', imageUrls[field.key] || '', !!removeImages[field.key]);
                     });
                     html += '</div>';
                 });
@@ -2665,7 +2719,7 @@
                     let targetIndex = tabs.length + index;
                     html += `<div class="tab-pane fade" id="directory-value-tab-${targetIndex}" role="tabpanel">`;
                     tab.fields.forEach(function (field) {
-                        html += renderValueFieldControl(field, data[field.key] ?? '', imageUrls[field.key] || '', !!removeImages[field.key]);
+                        html += renderValueFieldControl(field, runtimeData[field.key] ?? '', imageUrls[field.key] || '', !!removeImages[field.key]);
                     });
                     html += '</div>';
                 });
@@ -2673,7 +2727,7 @@
                 html += '</div>';
             } else {
                 schema.forEach(function (field) {
-                    html += renderValueFieldControl(field, data[field.key] ?? '', imageUrls[field.key] || '', !!removeImages[field.key]);
+                    html += renderValueFieldControl(field, runtimeData[field.key] ?? '', imageUrls[field.key] || '', !!removeImages[field.key]);
                 });
             }
 
