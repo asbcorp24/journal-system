@@ -886,7 +886,7 @@
                 }
 
                 let template = String(field.template || '');
-                runtimeData[field.key] = template.replace(/{{\s*([a-zA-Z][a-zA-Z0-9_]*)\s*}}/g, function (_, key) {
+                runtimeData[field.key] = template.replace(new RegExp('\\{\\{\\s*([a-zA-Z][a-zA-Z0-9_]*)\\s*\\}\\}', 'g'), function (_, key) {
                     let sourceField = (schema || []).find(function (item) {
                         return String(item.key || '') === String(key || '');
                     }) || {};
