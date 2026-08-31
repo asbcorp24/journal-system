@@ -10,6 +10,7 @@ use App\Models\DirectoryTemplateList;
 use App\Models\DirectoryValue;
 use App\Models\Division;
 use App\Models\SavedFilter;
+use App\Support\DirectoryAccessScope;
 use App\Support\DirectorySchema;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Http\Request;
@@ -92,21 +93,28 @@ class DirectoryController extends Controller
             'description' => ['nullable', 'string'],
             'division_ids' => ['nullable', 'array'],
             'division_ids.*' => ['exists:divisions,id'],
+            'table_settings' => ['nullable', 'array'],
             'schema' => ['nullable', 'array'],
         ]);
 
         $schema = DirectorySchema::normalizeSchema($validated['schema'] ?? []);
+        $tableSettings = $this->normalizeDirectoryTableSettings($validated['table_settings'] ?? []);
 
-        $directory = DB::transaction(function () use ($validated, $schema) {
+        $directory = DB::transaction(function () use ($validated, $schema, $tableSettings) {
             $directory = Directory::create([
                 'name' => $validated['name'],
                 'code' => $validated['code'] ?? null,
                 'description' => $validated['description'] ?? null,
                 'schema' => $schema,
+                'table_settings' => $tableSettings,
                 'created_by' => $this->currentDirectoryCreatorId(),
             ]);
 
             $directory->divisions()->sync($validated['division_ids'] ?? []);
+            DirectoryAccessScope::grantDivisionAccessToReferencedDirectoriesFromDirectory(
+                $directory,
+                $validated['division_ids'] ?? []
+            );
             $this->logDirectoryActivity('directory_created', $directory, 'Создан справочник');
 
             return $directory;
@@ -132,6 +140,7 @@ class DirectoryController extends Controller
                 'code' => $directory->code,
                 'description' => $directory->description,
                 'schema' => $directory->schema ?? [],
+                'table_settings' => $this->normalizeDirectoryTableSettings($directory->table_settings ?? []),
                 'division_ids' => $directory->divisions->pluck('id')->values(),
                 'scripts' => $this->serializeDirectoryScripts($directory->scripts),
             ],
@@ -155,20 +164,27 @@ class DirectoryController extends Controller
             'description' => ['nullable', 'string'],
             'division_ids' => ['nullable', 'array'],
             'division_ids.*' => ['exists:divisions,id'],
+            'table_settings' => ['nullable', 'array'],
             'schema' => ['nullable', 'array'],
         ]);
 
         $schema = DirectorySchema::normalizeSchema($validated['schema'] ?? []);
+        $tableSettings = $this->normalizeDirectoryTableSettings($validated['table_settings'] ?? []);
 
-        DB::transaction(function () use ($directory, $validated, $schema) {
+        DB::transaction(function () use ($directory, $validated, $schema, $tableSettings) {
             $directory->update([
                 'name' => $validated['name'],
                 'code' => $validated['code'] ?? null,
                 'description' => $validated['description'] ?? null,
                 'schema' => $schema,
+                'table_settings' => $tableSettings,
             ]);
 
             $directory->divisions()->sync($validated['division_ids'] ?? []);
+            DirectoryAccessScope::grantDivisionAccessToReferencedDirectoriesFromDirectory(
+                $directory,
+                $validated['division_ids'] ?? []
+            );
             $this->logDirectoryActivity('directory_updated', $directory, 'Обновлён справочник');
         });
 
@@ -211,6 +227,7 @@ class DirectoryController extends Controller
                 'name' => $directory->name,
                 'code' => $directory->code,
                 'description' => $directory->description,
+                'table_settings' => $this->normalizeDirectoryTableSettings($directory->table_settings ?? []),
                 'divisions' => $directory->divisions->map(function (Division $division) {
                     return [
                         'name' => $division->name,
@@ -244,6 +261,7 @@ class DirectoryController extends Controller
             'code' => $this->generateImportedDirectoryCode($template['code'] ?? null),
             'description' => $template['description'] ?? null,
             'division_ids' => $this->resolveDivisionIdsFromImport($template['divisions'] ?? []),
+            'table_settings' => $template['table_settings'] ?? [],
             'schema' => $this->importDirectorySchema($template['schema'] ?? []),
         ]);
 
@@ -253,10 +271,15 @@ class DirectoryController extends Controller
                 'code' => $input['code'] ?? null,
                 'description' => $input['description'] ?? null,
                 'schema' => $input['schema'],
+                'table_settings' => $input['table_settings'] ?? [],
                 'created_by' => $this->currentDirectoryCreatorId(),
             ]);
 
             $directory->divisions()->sync($input['division_ids'] ?? []);
+            DirectoryAccessScope::grantDivisionAccessToReferencedDirectoriesFromDirectory(
+                $directory,
+                $input['division_ids'] ?? []
+            );
 
             return $directory;
         });
@@ -1172,6 +1195,7 @@ class DirectoryController extends Controller
             'code' => $directory->code,
             'description' => $directory->description,
             'schema' => $this->prepareDirectorySchemaForRuntime($directory, $directory->schema ?? []),
+            'table_settings' => $this->normalizeDirectoryTableSettings($directory->table_settings ?? []),
             'scripts' => $this->serializeDirectoryScripts($directory->scripts()->get()),
             'filter_presets' => $this->serializeSavedFilters($directory),
             'template_lists' => DirectorySchema::normalizeTemplateLists(
@@ -1491,12 +1515,25 @@ class DirectoryController extends Controller
             'description' => ['nullable', 'string'],
             'division_ids' => ['nullable', 'array'],
             'division_ids.*' => ['exists:divisions,id'],
+            'table_settings' => ['nullable', 'array'],
             'schema' => ['nullable', 'array'],
         ])->validate();
 
         $validated['schema'] = DirectorySchema::normalizeSchema($validated['schema'] ?? []);
+        $validated['table_settings'] = $this->normalizeDirectoryTableSettings($validated['table_settings'] ?? []);
 
         return $validated;
+    }
+
+    private function normalizeDirectoryTableSettings($settings): array
+    {
+        $settings = is_array($settings) ? $settings : [];
+
+        return [
+            'show_code' => !array_key_exists('show_code', $settings) || (bool) $settings['show_code'],
+            'show_sort_order' => !array_key_exists('show_sort_order', $settings) || (bool) $settings['show_sort_order'],
+            'show_status' => !array_key_exists('show_status', $settings) || (bool) $settings['show_status'],
+        ];
     }
 
     private function exportDirectorySchema(array $schema): array

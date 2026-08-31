@@ -9,6 +9,7 @@ use App\Models\Division;
 use App\Models\JournalEntry;
 use App\Models\JournalTemplate;
 use App\Models\UserFavorite;
+use App\Support\DirectoryAccessScope;
 use App\Support\UserJournalAccess;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
@@ -241,20 +242,15 @@ class DashboardController extends Controller
 
     private function accessibleDirectories(): Collection
     {
-        $divisionId = session('user_division_id');
-        $managedDivisionIds = \App\Support\DivisionTree::managedDivisionIds($divisionId, session('user_role'));
+        $directoryIds = DirectoryAccessScope::accessibleDirectoryIdsForUser(
+            (int) session('user_id'),
+            session('user_role'),
+            session('user_division_id') !== null ? (int) session('user_division_id') : null
+        );
 
         return Directory::query()
             ->with('divisions:id,name')
-            ->where(function (Builder $query) use ($managedDivisionIds) {
-                $query->whereDoesntHave('divisions');
-
-                if (!empty($managedDivisionIds)) {
-                    $query->orWhereHas('divisions', function (Builder $divisionQuery) use ($managedDivisionIds) {
-                        $divisionQuery->whereIn('divisions.id', $managedDivisionIds);
-                    });
-                }
-            })
+            ->whereIn('id', $directoryIds)
             ->orderBy('name')
             ->get();
     }

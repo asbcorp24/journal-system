@@ -7,6 +7,7 @@ use App\Models\Directory;
 use App\Models\Division;
 use App\Models\JournalTemplate;
 use App\Models\User;
+use App\Support\DirectoryAccessScope;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -100,6 +101,10 @@ class JournalTemplateController extends Controller
             ]);
 
             $template->divisions()->sync($validated['division_ids'] ?? []);
+            DirectoryAccessScope::grantDivisionAccessToReferencedDirectoriesFromJournal(
+                $template,
+                $validated['division_ids'] ?? []
+            );
 
             return $template;
         });
@@ -155,6 +160,10 @@ class JournalTemplateController extends Controller
             ]);
 
             $journalTemplate->divisions()->sync($validated['division_ids'] ?? []);
+            DirectoryAccessScope::grantDivisionAccessToReferencedDirectoriesFromJournal(
+                $journalTemplate,
+                $validated['division_ids'] ?? []
+            );
         });
 
         return response()->json([
@@ -255,6 +264,10 @@ class JournalTemplateController extends Controller
             ]);
 
             $template->divisions()->sync($validated['division_ids'] ?? []);
+            DirectoryAccessScope::grantDivisionAccessToReferencedDirectoriesFromJournal(
+                $template,
+                $validated['division_ids'] ?? []
+            );
 
             return $template;
         });

@@ -186,7 +186,7 @@
                         <div class="table-responsive">
                             <table class="table table-dark table-hover align-middle">
                                 <thead>
-                                <tr>
+                                <tr id="valuesTableHead">
                                     <th>ID</th>
                                     <th>Запись</th>
                                     <th>Код</th>
@@ -244,6 +244,24 @@
                                     <option value="{{ $division->id }}">{{ $division->name }}</option>
                                 @endforeach
                             </select>
+                        </div>
+
+                        <div class="col-md-12">
+                            <label class="form-label">Колонки таблицы</label>
+                            <div class="d-flex flex-wrap gap-4">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="directoryShowCode" checked>
+                                    <label class="form-check-label" for="directoryShowCode">Код</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="directoryShowSortOrder" checked>
+                                    <label class="form-check-label" for="directoryShowSortOrder">Сорт.</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="directoryShowStatus" checked>
+                                    <label class="form-check-label" for="directoryShowStatus">Статус</label>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -853,12 +871,7 @@
 
         function stringifyAdminTemplateFieldValue(field, value, data = {}) {
             if (field.type === 'template_list') {
-                let selectedItem = getAdminTemplateListSelectedItem(field, data);
                 let parts = [];
-
-                if (selectedItem && selectedItem.name) {
-                    parts.push(String(selectedItem.name).trim());
-                }
 
                 getAdminTemplateListDisplayLines(field, data).forEach(function (line) {
                     let lineValue = String(line.value || '').trim();
@@ -906,6 +919,10 @@
                     return;
                 }
 
+                if (field.show_in_table === false) {
+                    return;
+                }
+
                 let selectedItem = getAdminTemplateListSelectedItem(field, data);
                 let lines = getAdminTemplateListDisplayLines(field, data);
 
@@ -946,6 +963,15 @@
             html += `</div></td></tr>`;
 
             return html;
+        }
+
+        function getAdminValuesTableColumnCount(settings = null) {
+            let tableSettings = normalizeDirectoryTableSettings(settings || getSelectedDirectoryTableSettings());
+
+            return 3
+                + (tableSettings.show_code !== false ? 1 : 0)
+                + (tableSettings.show_sort_order !== false ? 1 : 0)
+                + (tableSettings.show_status !== false ? 1 : 0);
         }
 
         function buildAdminDirectoryFilterSchema(schema, filterValues = {}) {
@@ -1971,10 +1997,11 @@
             }
 
             currentValuePage = page;
+            let columnCount = getAdminValuesTableColumnCount();
 
             $('#valuesTableBody').html(`
                 <tr>
-                    <td colspan="6" class="text-center text-secondary py-5">Загрузка...</td>
+                    <td colspan="${columnCount}" class="text-center text-secondary py-5">\u0417\u0430\u0433\u0440\u0443\u0437\u043a\u0430...</td>
                 </tr>
             `);
 
@@ -1995,6 +2022,7 @@
                     $('#selectedDirectoryName').text(response.directory.name);
                     $('#selectedDirectoryDescription').text(response.directory.description || '');
                     $('#selectedDirectorySchemaSummary').text(schemaSummary(response.directory.schema || []));
+                    renderAdminValuesTableHead(response.directory.table_settings || {});
                     updateDeletedValuesButton();
                     populateSavedAdminDirectoryFilterSelect();
                     if (!$('#valueFilters').children().length) {
@@ -2019,6 +2047,10 @@
             let schema = selectedDirectoryData && selectedDirectoryData.schema ? selectedDirectoryData.schema : [];
 
             schema.forEach(function (field) {
+                if (field.show_in_table === false) {
+                    return;
+                }
+
                 let value = item.data[field.key];
 
                 if (value === null || value === undefined || value === '') {
@@ -2057,10 +2089,13 @@
         };
 
         function renderValues(items) {
+            let tableSettings = getSelectedDirectoryTableSettings();
+            let columnCount = getAdminValuesTableColumnCount(tableSettings);
+
             if (!items || !items.length) {
                 $('#valuesTableBody').html(`
                     <tr>
-                        <td colspan="6" class="text-center text-secondary py-5">Записи не найдены</td>
+                        <td colspan="${columnCount}" class="text-center text-secondary py-5">\u0417\u0430\u043f\u0438\u0441\u0438 \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d\u044b</td>
                     </tr>
                 `);
                 return;
@@ -2076,9 +2111,9 @@
                             <div>${escapeHtml(item.value)}</div>
                             ${renderRecordPreview(item)}
                         </td>
-                        <td>${item.code ? escapeHtml(item.code) : '<span class="text-secondary">-</span>'}</td>
-                        <td>${item.sort_order}</td>
-                        <td>${renderBadgeActive(item.is_active)}</td>
+                        ${tableSettings.show_code !== false ? `<td>${item.code ? escapeHtml(item.code) : '<span class="text-secondary">-</span>'}</td>` : ''}
+                        ${tableSettings.show_sort_order !== false ? `<td>${item.sort_order}</td>` : ''}
+                        ${tableSettings.show_status !== false ? `<td>${renderBadgeActive(item.is_active)}</td>` : ''}
                         <td class="text-end">
                             <button class="btn btn-sm btn-outline-info edit-value" data-id="${item.id}"><i class="bi bi-pencil"></i></button>
                             <button class="btn btn-sm btn-outline-danger delete-value" data-id="${item.id}"><i class="bi bi-trash"></i></button>
@@ -2099,10 +2134,63 @@
             renderPagination('#valuesPaginationLinks', pagination, 'value');
         }
 
+        function getDefaultDirectoryTableSettings() {
+            return {
+                show_code: true,
+                show_sort_order: true,
+                show_status: true,
+            };
+        }
+
+        function normalizeDirectoryTableSettings(settings = {}) {
+            return Object.assign({}, getDefaultDirectoryTableSettings(), settings || {});
+        }
+
+        function collectDirectoryTableSettings() {
+            return {
+                show_code: $('#directoryShowCode').is(':checked'),
+                show_sort_order: $('#directoryShowSortOrder').is(':checked'),
+                show_status: $('#directoryShowStatus').is(':checked'),
+            };
+        }
+
+        function fillDirectoryTableSettings(settings = {}) {
+            let normalized = normalizeDirectoryTableSettings(settings);
+            $('#directoryShowCode').prop('checked', normalized.show_code !== false);
+            $('#directoryShowSortOrder').prop('checked', normalized.show_sort_order !== false);
+            $('#directoryShowStatus').prop('checked', normalized.show_status !== false);
+        }
+
+        function getSelectedDirectoryTableSettings() {
+            return normalizeDirectoryTableSettings(selectedDirectoryData && selectedDirectoryData.table_settings ? selectedDirectoryData.table_settings : {});
+        }
+
+        function renderAdminValuesTableHead(settings = null) {
+            let tableSettings = normalizeDirectoryTableSettings(settings || {});
+            let html = '<th>ID</th>';
+            html += '<th>Запись</th>';
+
+            if (tableSettings.show_code !== false) {
+                html += '<th>Код</th>';
+            }
+
+            if (tableSettings.show_sort_order !== false) {
+                html += '<th>Сорт.</th>';
+            }
+
+            if (tableSettings.show_status !== false) {
+                html += '<th>Статус</th>';
+            }
+
+            html += '<th class="text-end">Действия</th>';
+            $('#valuesTableHead').html(html);
+        }
+
         function clearDirectoryForm() {
             $('#directoryForm')[0].reset();
             $('#directoryId').val('');
             $('#directoryDivisions').val([]);
+            fillDirectoryTableSettings(getDefaultDirectoryTableSettings());
             schemaFields = [];
             schemaFieldIndex = 0;
             renderSchemaFields();
@@ -2120,6 +2208,7 @@
             $('#directoryName').val(preset.name || '');
             $('#directoryCode').val(preset.code || '');
             $('#directoryDescription').val(preset.description || '');
+            fillDirectoryTableSettings(preset.table_settings || getDefaultDirectoryTableSettings());
 
             schemaFields = [];
             schemaFieldIndex = 0;
@@ -2146,6 +2235,7 @@
                 tab: data?.tab || '',
                 required: !!data?.required,
                 unique: !!data?.unique,
+                show_in_table: data?.show_in_table !== undefined ? !!data?.show_in_table : true,
                 auto_generate: !!data?.auto_generate,
                 formula: data?.formula || '',
                 template: data?.template || '',
@@ -2234,6 +2324,11 @@
                                         <label class="form-check-label">Уник.</label>
                                     </div>
 
+                                    <div class="form-check mt-4">
+                                        <input class="form-check-input schema-show-in-table" type="checkbox" ${field.show_in_table !== false ? 'checked' : ''}>
+                                        <label class="form-check-label">В таблице</label>
+                                    </div>
+
                                     <button type="button" class="btn btn-outline-danger remove-schema-field">
                                         <i class="bi bi-trash"></i>
                                     </button>
@@ -2307,6 +2402,7 @@
                 typeSelect.prev('.form-label').text('Тип');
                 card.find('.schema-required').closest('.form-check').find('.form-check-label').text('Обяз.');
                 card.find('.schema-unique').closest('.form-check').find('.form-check-label').text('Уник.');
+                card.find('.schema-show-in-table').closest('.form-check').find('.form-check-label').text('В таблице');
 
                 const optionLabels = {
                     text: 'Текст',
@@ -2388,6 +2484,7 @@
                     type: card.find('.schema-type').val(),
                     required: card.find('.schema-required').is(':checked'),
                     unique: card.find('.schema-unique').is(':checked'),
+                    show_in_table: card.find('.schema-show-in-table').is(':checked'),
                     auto_generate: card.find('.schema-auto-generate').is(':checked'),
                     formula: (card.find('.schema-formula').val() || '').trim(),
                     template: (card.find('.schema-template').val() || '').trim(),
@@ -2415,7 +2512,8 @@
                     type: field.type,
                     tab: field.tab || '',
                     required: field.required,
-                    unique: field.unique
+                    unique: field.unique,
+                    show_in_table: field.show_in_table !== false
                 };
 
                 if (field.type === 'list') {
@@ -2455,6 +2553,7 @@
                 code: $('#directoryCode').val(),
                 description: $('#directoryDescription').val(),
                 division_ids: $('#directoryDivisions').val() || [],
+                table_settings: collectDirectoryTableSettings(),
                 schema: schema
             };
         }
@@ -3083,6 +3182,7 @@
                     $('#directoryCode').val(item.code);
                     $('#directoryDescription').val(item.description);
                     $('#directoryDivisions').val(item.division_ids);
+                    fillDirectoryTableSettings(item.table_settings || {});
 
                     schemaFields = [];
                     schemaFieldIndex = 0;
@@ -3795,10 +3895,13 @@
         });
 
         function renderAdminDirectoryValuesWithDeleted(items) {
+            let tableSettings = getSelectedDirectoryTableSettings();
+            let columnCount = getAdminValuesTableColumnCount(tableSettings);
+
             if (!items || !items.length) {
                 $('#valuesTableBody').html(`
                     <tr>
-                        <td colspan="6" class="text-center text-secondary py-5">${showDeletedValues ? 'Удалённые записи не найдены' : 'Записи не найдены'}</td>
+                        <td colspan="${columnCount}" class="text-center text-secondary py-5">${showDeletedValues ? '\u0423\u0434\u0430\u043b\u0451\u043d\u043d\u044b\u0435 \u0437\u0430\u043f\u0438\u0441\u0438 \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d\u044b' : '\u0417\u0430\u043f\u0438\u0441\u0438 \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d\u044b'}</td>
                     </tr>
                 `);
                 return;
@@ -3815,9 +3918,9 @@
                             ${renderRecordPreview(item)}
                             ${showDeletedValues ? `<div class="text-secondary small mt-1">Удалено: ${escapeHtml(item.deleted_at || '-')} ${item.deleted_by_name ? '• ' + escapeHtml(item.deleted_by_name) : ''}</div>` : ''}
                         </td>
-                        <td>${item.code ? escapeHtml(item.code) : '<span class="text-secondary">-</span>'}</td>
-                        <td>${item.sort_order}</td>
-                        <td>${showDeletedValues ? '<span class="badge text-bg-danger">Удалена</span>' : renderBadgeActive(item.is_active)}</td>
+                        ${tableSettings.show_code !== false ? `<td>${item.code ? escapeHtml(item.code) : '<span class="text-secondary">-</span>'}</td>` : ''}
+                        ${tableSettings.show_sort_order !== false ? `<td>${item.sort_order}</td>` : ''}
+                        ${tableSettings.show_status !== false ? `<td>${showDeletedValues ? '<span class="badge text-bg-danger">\u0423\u0434\u0430\u043b\u0435\u043d\u0430</span>' : renderBadgeActive(item.is_active)}</td>` : ''}
                         <td class="text-end">
                             ${showDeletedValues
                                 ? `<button class="btn btn-sm btn-outline-success restore-value" data-id="${item.id}" title="Восстановить"><i class="bi bi-arrow-counterclockwise"></i></button>`
@@ -3837,10 +3940,11 @@
             }
 
             currentValuePage = page;
+            let columnCount = getAdminValuesTableColumnCount();
 
             $('#valuesTableBody').html(`
                 <tr>
-                    <td colspan="6" class="text-center text-secondary py-5">Загрузка...</td>
+                    <td colspan="${columnCount}" class="text-center text-secondary py-5">\u0417\u0430\u0433\u0440\u0443\u0437\u043a\u0430...</td>
                 </tr>
             `);
 
@@ -3861,6 +3965,7 @@
                     $('#selectedDirectoryName').text(response.directory.name);
                     $('#selectedDirectoryDescription').text(response.directory.description || '');
                     $('#selectedDirectorySchemaSummary').text(schemaSummary(response.directory.schema || []));
+                    renderAdminValuesTableHead(response.directory.table_settings || {});
                     updateDeletedValuesButton();
                     populateSavedAdminDirectoryFilterSelect();
 
@@ -3905,10 +4010,13 @@
         });
 
         renderAdminDirectoryValuesWithDeleted = function (items) {
+            let tableSettings = getSelectedDirectoryTableSettings();
+            let columnCount = getAdminValuesTableColumnCount(tableSettings);
+
             if (!items || !items.length) {
                 $('#valuesTableBody').html(`
                     <tr>
-                        <td colspan="6" class="text-center text-secondary py-5">${showDeletedValues ? 'Удалённые записи не найдены' : 'Записи не найдены'}</td>
+                        <td colspan="${columnCount}" class="text-center text-secondary py-5">${showDeletedValues ? '\u0423\u0434\u0430\u043b\u0451\u043d\u043d\u044b\u0435 \u0437\u0430\u043f\u0438\u0441\u0438 \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d\u044b' : '\u0417\u0430\u043f\u0438\u0441\u0438 \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d\u044b'}</td>
                     </tr>
                 `);
                 return;
@@ -3940,9 +4048,9 @@
                             ${renderRecordPreview(item)}
                             ${showDeletedValues ? `<div class="text-secondary small mt-1">Удалено: ${escapeHtml(item.deleted_at || '-')} ${item.deleted_by_name ? '• ' + escapeHtml(item.deleted_by_name) : ''}</div>` : ''}
                         </td>
-                        <td>${item.code ? escapeHtml(item.code) : '<span class="text-secondary">-</span>'}</td>
-                        <td>${item.sort_order}</td>
-                        <td>${showDeletedValues ? '<span class="badge text-bg-danger">Удалена</span>' : renderBadgeActive(item.is_active)}</td>
+                        ${tableSettings.show_code !== false ? `<td>${item.code ? escapeHtml(item.code) : '<span class="text-secondary">-</span>'}</td>` : ''}
+                        ${tableSettings.show_sort_order !== false ? `<td>${item.sort_order}</td>` : ''}
+                        ${tableSettings.show_status !== false ? `<td>${showDeletedValues ? '<span class="badge text-bg-danger">\u0423\u0434\u0430\u043b\u0435\u043d\u0430</span>' : renderBadgeActive(item.is_active)}</td>` : ''}
                         <td class="text-end">
                             ${showDeletedValues
                                 ? `<button class="btn btn-sm btn-outline-success restore-value" data-id="${item.id}" title="Восстановить"><i class="bi bi-arrow-counterclockwise"></i></button>`
@@ -3951,7 +4059,7 @@
                         </td>
                     </tr>
                 `;
-                html += renderAdminTemplateListRowBlocks(templateListBlocks);
+                html += renderAdminTemplateListRowBlocks(templateListBlocks, columnCount);
             });
 
             $('#valuesTableBody').html(html);

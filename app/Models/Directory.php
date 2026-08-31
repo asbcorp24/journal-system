@@ -11,11 +11,13 @@ class Directory extends Model
         'code',
         'description',
         'schema',
+        'table_settings',
         'created_by',
     ];
 
     protected $casts = [
         'schema' => 'array',
+        'table_settings' => 'array',
     ];
 
     public function values()

@@ -352,6 +352,42 @@
             return `${fieldKey}__${itemKey}__${subFieldKey}`;
         }
 
+        function getVisibleTableSchema(schema = []) {
+            return (schema || []).filter(function (field) {
+                return field.show_in_table !== false;
+            });
+        }
+
+        function getDirectoryTableSettings(directory = null) {
+            let settings = directory && directory.table_settings ? directory.table_settings : {};
+
+            return Object.assign({
+                show_code: true,
+                show_sort_order: true,
+                show_status: true,
+            }, settings || {});
+        }
+
+        function getDirectoryValuesTableColumnCount(schema = [], directory = null) {
+            let visibleSchema = getVisibleTableSchema(schema);
+            let settings = getDirectoryTableSettings(directory || selectedDirectory);
+            let total = (visibleSchema.length ? visibleSchema.length : 1) + 1;
+
+            if (settings.show_code !== false) {
+                total += 1;
+            }
+
+            if (settings.show_sort_order !== false) {
+                total += 1;
+            }
+
+            if (canManageDirectoryValues) {
+                total += 1;
+            }
+
+            return total;
+        }
+
         function collectTemplateListDynamicFields(schema, data = {}) {
             let dynamicTabs = [];
 
@@ -454,12 +490,7 @@
 
         function stringifyTemplateFieldValue(field, value, data = {}) {
             if (field.type === 'template_list') {
-                let selectedItem = getTemplateListSelectedItem(field, data);
                 let parts = [];
-
-                if (selectedItem && selectedItem.name) {
-                    parts.push(String(selectedItem.name).trim());
-                }
 
                 getTemplateListDisplayLines(field, data).forEach(function (line) {
                     let lineValue = String(line.value || '').trim();
@@ -504,6 +535,10 @@
 
             (schema || []).forEach(function (field) {
                 if (field.type !== 'template_list') {
+                    return;
+                }
+
+                if (field.show_in_table === false) {
                     return;
                 }
 
@@ -1194,23 +1229,31 @@
             return filters;
         };
 
-        function renderValuesTableHead(schema) {
+        function renderValuesTableHead(schema, directory = null) {
             let html = '';
+            let visibleSchema = getVisibleTableSchema(schema);
+            let tableSettings = getDirectoryTableSettings(directory || selectedDirectory);
 
-            if (schema && schema.length) {
-                schema.forEach(function (field) {
+            if (visibleSchema.length) {
+                visibleSchema.forEach(function (field) {
                     html += `<th>${escapeHtml(field.label)}</th>`;
                 });
             } else {
-                html += '<th>Значение</th>';
+                html += '<th>\u0417\u043d\u0430\u0447\u0435\u043d\u0438\u0435</th>';
             }
 
-            html += '\u003cth\u003e\u041a\u043e\u0434\u003c/th\u003e';
-            html += '<th>Сортировка</th>';
-            html += '<th>Создано</th>';
+            if (tableSettings.show_code !== false) {
+                html += '\u003cth\u003e\u041a\u043e\u0434\u003c/th\u003e';
+            }
+
+            if (tableSettings.show_sort_order !== false) {
+                html += '<th>\u0421\u043e\u0440\u0442\u0438\u0440\u043e\u0432\u043a\u0430</th>';
+            }
+
+            html += '<th>\u0421\u043e\u0437\u0434\u0430\u043d\u043e</th>';
 
             if (canManageDirectoryValues) {
-                html += '<th class="text-end">Действия</th>';
+                html += '<th class="text-end">\u0414\u0435\u0439\u0441\u0442\u0432\u0438\u044f</th>';
             }
 
             $('#directoryValuesHead').html(html);
@@ -1221,7 +1264,7 @@
                 $('#directoryValuesBody').html(`
                     <tr>
                         <td colspan="4" class="text-center text-secondary py-5">
-                            Выберите справочник
+                            \u0412\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u0441\u043f\u0440\u0430\u0432\u043e\u0447\u043d\u0438\u043a
                         </td>
                     </tr>
                 `);
@@ -1229,12 +1272,15 @@
             }
 
             let schema = selectedDirectory.schema || [];
+            let visibleSchema = getVisibleTableSchema(schema);
+            let tableSettings = getDirectoryTableSettings(selectedDirectory);
+            let totalColumns = getDirectoryValuesTableColumnCount(schema, selectedDirectory);
 
             if (!items || items.length === 0) {
                 $('#directoryValuesBody').html(`
                     <tr>
-                        <td colspan="${schema.length ? schema.length + (canManageDirectoryValues ? 4 : 3) : (canManageDirectoryValues ? 5 : 4)}" class="text-center text-secondary py-5">
-                            Значения не найдены
+                        <td colspan="${totalColumns}" class="text-center text-secondary py-5">
+                            \u0417\u043d\u0430\u0447\u0435\u043d\u0438\u044f \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d\u044b
                         </td>
                     </tr>
                 `);
@@ -1245,11 +1291,10 @@
 
             items.forEach(function (item) {
                 let templateListBlocks = schema.length ? collectTemplateListRowBlocks(schema, item.data || {}) : [];
-                let totalColumns = schema.length ? schema.length + (canManageDirectoryValues ? 4 : 3) : (canManageDirectoryValues ? 5 : 4);
                 html += '<tr>';
 
-                if (schema.length) {
-                    schema.forEach(function (field) {
+                if (visibleSchema.length) {
+                    visibleSchema.forEach(function (field) {
                         let value = item.data && item.data[field.key] !== undefined ? item.data[field.key] : '';
 
                         if ((field.type === 'directory' || field.type === 'parent') && value !== null && value !== '') {
@@ -1278,8 +1323,14 @@
                     html += `<td>${escapeHtml(item.value || '')}</td>`;
                 }
 
-                html += `<td>${item.code ? escapeHtml(item.code) : '<span class="text-secondary">—</span>'}</td>`;
-                html += `<td>${escapeHtml(String(item.sort_order ?? 0))}</td>`;
+                if (tableSettings.show_code !== false) {
+                    html += `<td>${item.code ? escapeHtml(item.code) : '<span class="text-secondary">—</span>'}</td>`;
+                }
+
+                if (tableSettings.show_sort_order !== false) {
+                    html += `<td>${escapeHtml(String(item.sort_order ?? 0))}</td>`;
+                }
+
                 html += `<td>${escapeHtml(formatDateTime(item.created_at))}</td>`;
 
                 if (canManageDirectoryValues) {
@@ -1294,6 +1345,7 @@
                 }
 
                 html += '</tr>';
+                html += renderTemplateListRowBlocks(templateListBlocks, totalColumns);
             });
 
             $('#directoryValuesBody').html(html);
@@ -1357,7 +1409,7 @@
                 $('#directoryValuesBody').html(`
                     <tr>
                         <td colspan="4" class="text-center text-secondary py-5">
-                            Выберите справочник
+                            \u0412\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u0441\u043f\u0440\u0430\u0432\u043e\u0447\u043d\u0438\u043a
                         </td>
                     </tr>
                 `);
@@ -1365,12 +1417,15 @@
             }
 
             let schema = selectedDirectory.schema || [];
+            let visibleSchema = getVisibleTableSchema(schema);
+            let tableSettings = getDirectoryTableSettings(selectedDirectory);
+            let totalColumns = getDirectoryValuesTableColumnCount(schema, selectedDirectory);
 
             if (!items || items.length === 0) {
                 $('#directoryValuesBody').html(`
                     <tr>
-                        <td colspan="${schema.length ? schema.length + (canManageDirectoryValues ? 4 : 3) : (canManageDirectoryValues ? 5 : 4)}" class="text-center text-secondary py-5">
-                            Значения не найдены
+                        <td colspan="${totalColumns}" class="text-center text-secondary py-5">
+                            \u0417\u043d\u0430\u0447\u0435\u043d\u0438\u044f \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d\u044b
                         </td>
                     </tr>
                 `);
@@ -1381,11 +1436,10 @@
 
             items.forEach(function (item) {
                 let templateListBlocks = schema.length ? collectTemplateListRowBlocks(schema, item.data || {}) : [];
-                let totalColumns = schema.length ? schema.length + (canManageDirectoryValues ? 4 : 3) : (canManageDirectoryValues ? 5 : 4);
                 html += '<tr>';
 
-                if (schema.length) {
-                    schema.forEach(function (field) {
+                if (visibleSchema.length) {
+                    visibleSchema.forEach(function (field) {
                         let value = item.data && item.data[field.key] !== undefined ? item.data[field.key] : '';
 
                         if ((field.type === 'directory' || field.type === 'parent') && value !== null && value !== '') {
@@ -1424,8 +1478,14 @@
                     html += `<td>${escapeHtml(item.value || '')}</td>`;
                 }
 
-                html += `<td>${item.code ? escapeHtml(item.code) : '<span class="text-secondary">-</span>'}</td>`;
-                html += `<td>${escapeHtml(String(item.sort_order ?? 0))}</td>`;
+                if (tableSettings.show_code !== false) {
+                    html += `<td>${item.code ? escapeHtml(item.code) : '<span class="text-secondary">-</span>'}</td>`;
+                }
+
+                if (tableSettings.show_sort_order !== false) {
+                    html += `<td>${escapeHtml(String(item.sort_order ?? 0))}</td>`;
+                }
+
                 html += `<td>${escapeHtml(formatDateTime(item.created_at))}</td>`;
 
                 if (canManageDirectoryValues) {
@@ -1485,11 +1545,11 @@
                     toggleAddButton();
 
                     if (selectedDirectory) {
-                        renderValuesTableHead(selectedDirectory.schema || []);
+                        renderValuesTableHead(selectedDirectory.schema || [], selectedDirectory);
                         renderDirectoryValueFilters(selectedDirectory.schema || []);
                         loadValues();
                     } else {
-                        renderValuesTableHead([]);
+                        renderValuesTableHead([], null);
                         renderDirectoryValueFilters([]);
                         renderValues([]);
                     }
@@ -1531,11 +1591,12 @@
             }
 
             currentValuesPage = page;
+            let columnCount = getDirectoryValuesTableColumnCount(selectedDirectory.schema || [], selectedDirectory);
 
             $('#directoryValuesBody').html(`
                 <tr>
-                    <td colspan="${(selectedDirectory.schema || []).length ? (selectedDirectory.schema || []).length + 3 : 4}" class="text-center text-secondary py-5">
-                        Загрузка...
+                    <td colspan="${columnCount}" class="text-center text-secondary py-5">
+                        \u0417\u0430\u0433\u0440\u0443\u0437\u043a\u0430...
                     </td>
                 </tr>
             `);
@@ -1554,7 +1615,7 @@
                     directoryValuesCache[selectedDirectory.id] = currentDirectoryValues;
                     renderDirectories(directories);
                     updateSelectedDirectoryInfo();
-                    renderValuesTableHead(selectedDirectory.schema || []);
+                    renderValuesTableHead(selectedDirectory.schema || [], selectedDirectory);
                     renderValues(currentDirectoryValues);
                     renderValuesPagination(response.pagination);
                     toggleAddButton();
@@ -2074,7 +2135,7 @@
 
             renderDirectories(directories);
             updateSelectedDirectoryInfo();
-            renderValuesTableHead(selectedDirectory ? (selectedDirectory.schema || []) : []);
+                renderValuesTableHead(selectedDirectory ? (selectedDirectory.schema || []) : [], selectedDirectory);
             renderDirectoryValueFilters(selectedDirectory ? (selectedDirectory.schema || []) : []);
             toggleAddButton();
             loadValues(1);
@@ -2478,19 +2539,22 @@
             if (!selectedDirectory) {
                 $('#directoryValuesBody').html(`
                     <tr>
-                        <td colspan="4" class="text-center text-secondary py-5">Справочник не выбран</td>
+                        <td colspan="4" class="text-center text-secondary py-5">\u0421\u043f\u0440\u0430\u0432\u043e\u0447\u043d\u0438\u043a \u043d\u0435 \u0432\u044b\u0431\u0440\u0430\u043d</td>
                     </tr>
                 `);
                 return;
             }
 
             let schema = selectedDirectory.schema || [];
+            let visibleSchema = getVisibleTableSchema(schema);
+            let tableSettings = getDirectoryTableSettings(selectedDirectory);
+            let totalColumns = getDirectoryValuesTableColumnCount(schema, selectedDirectory);
 
             if (!items || items.length === 0) {
                 $('#directoryValuesBody').html(`
                     <tr>
-                        <td colspan="${schema.length ? schema.length + (canManageDirectoryValues ? 4 : 3) : (canManageDirectoryValues ? 5 : 4)}" class="text-center text-secondary py-5">
-                            ${showDeletedDirectoryValues ? 'Удалённые записи не найдены' : 'Значения не найдены'}
+                        <td colspan="${totalColumns}" class="text-center text-secondary py-5">
+                            ${showDeletedDirectoryValues ? '\u0423\u0434\u0430\u043b\u0451\u043d\u043d\u044b\u0435 \u0437\u0430\u043f\u0438\u0441\u0438 \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d\u044b' : '\u0417\u043d\u0430\u0447\u0435\u043d\u0438\u044f \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d\u044b'}
                         </td>
                     </tr>
                 `);
@@ -2501,11 +2565,10 @@
 
             items.forEach(function (item) {
                 let templateListBlocks = schema.length ? collectTemplateListRowBlocks(schema, item.data || {}) : [];
-                let totalColumns = schema.length ? schema.length + (canManageDirectoryValues ? 4 : 3) : (canManageDirectoryValues ? 5 : 4);
                 html += '<tr>';
 
-                if (schema.length) {
-                    schema.forEach(function (field) {
+                if (visibleSchema.length) {
+                    visibleSchema.forEach(function (field) {
                         let value = item.data && item.data[field.key] !== undefined ? item.data[field.key] : '';
 
                         if ((field.type === 'directory' || field.type === 'parent') && value !== null && value !== '') {
@@ -2544,8 +2607,14 @@
                     html += `<td>${escapeHtml(item.value || '')}</td>`;
                 }
 
-                html += `<td>${item.code ? escapeHtml(item.code) : '<span class="text-secondary">-</span>'}</td>`;
-                html += `<td>${escapeHtml(String(item.sort_order ?? 0))}</td>`;
+                if (tableSettings.show_code !== false) {
+                    html += `<td>${item.code ? escapeHtml(item.code) : '<span class="text-secondary">-</span>'}</td>`;
+                }
+
+                if (tableSettings.show_sort_order !== false) {
+                    html += `<td>${escapeHtml(String(item.sort_order ?? 0))}</td>`;
+                }
+
                 html += `<td>${escapeHtml(formatDateTime(showDeletedDirectoryValues ? item.deleted_at : item.created_at))}</td>`;
 
                 if (canManageDirectoryValues) {
@@ -2577,11 +2646,12 @@
             }
 
             currentValuesPage = page;
+            let columnCount = getDirectoryValuesTableColumnCount(selectedDirectory.schema || [], selectedDirectory);
 
             $('#directoryValuesBody').html(`
                 <tr>
-                    <td colspan="${(selectedDirectory.schema || []).length ? (selectedDirectory.schema || []).length + 3 : 4}" class="text-center text-secondary py-5">
-                        Загрузка...
+                    <td colspan="${columnCount}" class="text-center text-secondary py-5">
+                        \u0417\u0430\u0433\u0440\u0443\u0437\u043a\u0430...
                     </td>
                 </tr>
             `);
@@ -2601,7 +2671,7 @@
                     directoryValuesCache[selectedDirectory.id] = currentDirectoryValues;
                     renderDirectories(directories);
                     updateSelectedDirectoryInfo();
-                    renderValuesTableHead(selectedDirectory.schema || []);
+                    renderValuesTableHead(selectedDirectory.schema || [], selectedDirectory);
                     renderValues(currentDirectoryValues);
                     renderValuesPagination(response.pagination);
                     toggleAddButton();
@@ -2644,19 +2714,22 @@
             if (!selectedDirectory) {
                 $('#directoryValuesBody').html(`
                     <tr>
-                        <td colspan="4" class="text-center text-secondary py-5">Справочник не выбран</td>
+                        <td colspan="4" class="text-center text-secondary py-5">\u0421\u043f\u0440\u0430\u0432\u043e\u0447\u043d\u0438\u043a \u043d\u0435 \u0432\u044b\u0431\u0440\u0430\u043d</td>
                     </tr>
                 `);
                 return;
             }
 
             let schema = selectedDirectory.schema || [];
+            let visibleSchema = getVisibleTableSchema(schema);
+            let tableSettings = getDirectoryTableSettings(selectedDirectory);
+            let totalColumns = getDirectoryValuesTableColumnCount(schema, selectedDirectory);
 
             if (!items || items.length === 0) {
                 $('#directoryValuesBody').html(`
                     <tr>
-                        <td colspan="${schema.length ? schema.length + (canManageDirectoryValues ? 4 : 3) : (canManageDirectoryValues ? 5 : 4)}" class="text-center text-secondary py-5">
-                            ${showDeletedDirectoryValues ? 'Удалённые записи не найдены' : 'Значения не найдены'}
+                        <td colspan="${totalColumns}" class="text-center text-secondary py-5">
+                            ${showDeletedDirectoryValues ? '\u0423\u0434\u0430\u043b\u0451\u043d\u043d\u044b\u0435 \u0437\u0430\u043f\u0438\u0441\u0438 \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d\u044b' : '\u0417\u043d\u0430\u0447\u0435\u043d\u0438\u044f \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d\u044b'}
                         </td>
                     </tr>
                 `);
@@ -2667,11 +2740,10 @@
 
             items.forEach(function (item) {
                 let templateListBlocks = schema.length ? collectTemplateListRowBlocks(schema, item.data || {}) : [];
-                let totalColumns = schema.length ? schema.length + (canManageDirectoryValues ? 4 : 3) : (canManageDirectoryValues ? 5 : 4);
                 html += '<tr>';
 
-                if (schema.length) {
-                    schema.forEach(function (field) {
+                if (visibleSchema.length) {
+                    visibleSchema.forEach(function (field) {
                         let value = item.data && item.data[field.key] !== undefined ? item.data[field.key] : '';
 
                         if ((field.type === 'directory' || field.type === 'parent') && value !== null && value !== '') {
@@ -2723,8 +2795,14 @@
                     </td>`;
                 }
 
-                html += `<td>${item.code ? escapeHtml(item.code) : '<span class="text-secondary">-</span>'}</td>`;
-                html += `<td>${escapeHtml(String(item.sort_order ?? 0))}</td>`;
+                if (tableSettings.show_code !== false) {
+                    html += `<td>${item.code ? escapeHtml(item.code) : '<span class="text-secondary">-</span>'}</td>`;
+                }
+
+                if (tableSettings.show_sort_order !== false) {
+                    html += `<td>${escapeHtml(String(item.sort_order ?? 0))}</td>`;
+                }
+
                 html += `<td>${escapeHtml(formatDateTime(showDeletedDirectoryValues ? item.deleted_at : item.created_at))}</td>`;
 
                 if (canManageDirectoryValues) {

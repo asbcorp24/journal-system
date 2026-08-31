@@ -10,8 +10,8 @@ use App\Models\DirectoryTemplateList;
 use App\Models\DirectoryValue;
 use App\Models\SavedFilter;
 use App\Models\UserFavorite;
+use App\Support\DirectoryAccessScope;
 use App\Support\DirectorySchema;
-use App\Support\DivisionTree;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
@@ -81,6 +81,7 @@ class DirectoryController extends Controller
                     'code' => $directory->code,
                     'description' => $directory->description,
                     'schema' => $this->prepareDirectorySchemaForRuntime($directory, $directory->schema ?? []),
+                    'table_settings' => $this->normalizeDirectoryTableSettings($directory->table_settings ?? []),
                     'scripts' => $this->serializeDirectoryScripts($directory->scripts()->where('is_active', true)->get()),
                     'is_favorite' => in_array((int) $directory->id, $favoriteIds, true),
                 ];
@@ -110,6 +111,7 @@ class DirectoryController extends Controller
                     'name' => $directory->name,
                 'description' => $directory->description,
                 'schema' => $schema,
+                'table_settings' => $this->normalizeDirectoryTableSettings($directory->table_settings ?? []),
                 'scripts' => $this->serializeDirectoryScripts($directory->scripts()->where('is_active', true)->get()),
                 'filter_presets' => $this->serializeSavedFilters($directory),
                 'template_lists' => DirectorySchema::normalizeTemplateLists(
@@ -138,6 +140,7 @@ class DirectoryController extends Controller
                 'name' => $directory->name,
                 'description' => $directory->description,
                 'schema' => $schema,
+                'table_settings' => $this->normalizeDirectoryTableSettings($directory->table_settings ?? []),
                 'scripts' => $this->serializeDirectoryScripts($directory->scripts()->where('is_active', true)->get()),
                 'filter_presets' => $this->serializeSavedFilters($directory),
                 'template_lists' => DirectorySchema::normalizeTemplateLists(
@@ -407,27 +410,23 @@ class DirectoryController extends Controller
 
     private function getAccessibleDirectoriesQuery()
     {
-        $divisionId = session('user_division_id');
-        $managedDivisionIds = DivisionTree::managedDivisionIds($divisionId, session('user_role'));
+        $directoryIds = DirectoryAccessScope::accessibleDirectoryIdsForUser(
+            (int) session('user_id'),
+            session('user_role'),
+            session('user_division_id') !== null ? (int) session('user_division_id') : null
+        );
 
-        return Directory::query()->where(function ($query) use ($managedDivisionIds) {
-            $query->whereDoesntHave('divisions');
-
-            if (!empty($managedDivisionIds)) {
-                $query->orWhereHas('divisions', function ($divisionQuery) use ($managedDivisionIds) {
-                    $divisionQuery->whereIn('divisions.id', $managedDivisionIds);
-                });
-            }
-        });
+        return Directory::query()->whereIn('id', $directoryIds);
     }
 
     private function ensureDirectoryAccess(Directory $directory): void
     {
-        $divisionId = session('user_division_id');
-        $managedDivisionIds = DivisionTree::managedDivisionIds($divisionId, session('user_role'));
-
-        $hasAccess = !$directory->divisions()->exists()
-            || (!empty($managedDivisionIds) && $directory->divisions()->whereIn('divisions.id', $managedDivisionIds)->exists());
+        $hasAccess = DirectoryAccessScope::userCanAccessDirectory(
+            $directory,
+            (int) session('user_id'),
+            session('user_role'),
+            session('user_division_id') !== null ? (int) session('user_division_id') : null
+        );
 
         abort_unless($hasAccess, 403, 'Нет доступа к этому справочнику');
     }
@@ -454,6 +453,17 @@ class DirectoryController extends Controller
 
             return $field;
         })->values()->all();
+    }
+
+    private function normalizeDirectoryTableSettings($settings): array
+    {
+        $settings = is_array($settings) ? $settings : [];
+
+        return [
+            'show_code' => !array_key_exists('show_code', $settings) || (bool) $settings['show_code'],
+            'show_sort_order' => !array_key_exists('show_sort_order', $settings) || (bool) $settings['show_sort_order'],
+            'show_status' => !array_key_exists('show_status', $settings) || (bool) $settings['show_status'],
+        ];
     }
 
     private function validateParentSelfReference(array $schema, array $recordData, ?int $currentValueId = null): void

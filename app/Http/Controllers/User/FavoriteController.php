@@ -6,7 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Directory;
 use App\Models\JournalTemplate;
 use App\Models\UserFavorite;
-use App\Support\DivisionTree;
+use App\Support\DirectoryAccessScope;
 use App\Support\UserJournalAccess;
 use Illuminate\Http\Request;
 
@@ -67,9 +67,12 @@ class FavoriteController extends Controller
         }
 
         $directory = Directory::query()->findOrFail($entityId);
-        $managedDivisionIds = DivisionTree::managedDivisionIds(session('user_division_id'), session('user_role'));
-        $hasAccess = !$directory->divisions()->exists()
-            || (!empty($managedDivisionIds) && $directory->divisions()->whereIn('divisions.id', $managedDivisionIds)->exists());
+        $hasAccess = DirectoryAccessScope::userCanAccessDirectory(
+            $directory,
+            (int) session('user_id'),
+            session('user_role'),
+            session('user_division_id') !== null ? (int) session('user_division_id') : null
+        );
 
         abort_unless($hasAccess, 403, 'Нет доступа к этому справочнику');
     }

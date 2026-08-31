@@ -49,6 +49,9 @@ class DirectorySchema
                 'tab' => mb_substr(trim((string) ($field['tab'] ?? '')), 0, 100),
                 'required' => self::toBoolean($field['required'] ?? false),
                 'unique' => self::toBoolean($field['unique'] ?? false),
+                'show_in_table' => array_key_exists('show_in_table', $field)
+                    ? self::toBoolean($field['show_in_table'])
+                    : true,
             ];
 
             if ($type === 'qr') {
@@ -981,11 +984,6 @@ class DirectorySchema
     {
         if (($field['type'] ?? null) === 'template_list') {
             $parts = [];
-            $selectedName = self::formatFieldValue($field, $value);
-
-            if ($selectedName !== '' && $selectedName !== '-') {
-                $parts[] = trim($selectedName);
-            }
 
             foreach (self::templateListDisplayLines($field, $values) as $line) {
                 $lineValue = trim((string) ($line['value'] ?? ''));

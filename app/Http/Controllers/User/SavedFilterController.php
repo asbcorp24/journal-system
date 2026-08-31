@@ -8,7 +8,7 @@ use App\Models\DirectoryValue;
 use App\Models\Division;
 use App\Models\JournalTemplate;
 use App\Models\SavedFilter;
-use App\Support\DivisionTree;
+use App\Support\DirectoryAccessScope;
 use App\Support\UserJournalAccess;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -394,11 +394,15 @@ class SavedFilterController extends Controller
 
     private function ensureDirectoryAccess(Directory $directory): void
     {
-        $managedDivisionIds = DivisionTree::managedDivisionIds(session('user_division_id'), session('user_role'));
-        $allowedDivisionIds = $directory->divisions()->pluck('divisions.id')->map(fn ($id) => (int) $id)->all();
-
-        if (empty(array_intersect($managedDivisionIds, $allowedDivisionIds))) {
-            abort(403, 'Нет доступа к этому справочнику');
-        }
+        abort_unless(
+            DirectoryAccessScope::userCanAccessDirectory(
+                $directory,
+                (int) session('user_id'),
+                session('user_role'),
+                session('user_division_id') !== null ? (int) session('user_division_id') : null
+            ),
+            403,
+            'Нет доступа к этому справочнику'
+        );
     }
 }
