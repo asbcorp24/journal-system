@@ -157,11 +157,24 @@
                         </div>
 
                         <div class="row g-2 mb-3">
-                            <div class="col-md-9">
+                            <div class="col-md-6">
                                 <input type="text"
                                        id="valueSearchInput"
                                        class="form-control"
                                        placeholder="Поиск записи">
+                            </div>
+
+                            <div class="col-md-3">
+                                <select id="valueSortSelect" class="form-select">
+                                    <option value="created_at_desc">Сначала новые</option>
+                                    <option value="created_at_asc">Сначала старые</option>
+                                    <option value="value_asc">По названию: А-Я</option>
+                                    <option value="value_desc">По названию: Я-А</option>
+                                    <option value="code_asc">По коду: А-Я</option>
+                                    <option value="code_desc">По коду: Я-А</option>
+                                    <option value="sort_order_asc">По сортировке: по возрастанию</option>
+                                    <option value="sort_order_desc">По сортировке: по убыванию</option>
+                                </select>
                             </div>
 
                             <div class="col-md-3">
@@ -2011,6 +2024,7 @@
                 data: {
                     page: page,
                     search: $('#valueSearchInput').val(),
+                    sort: $('#valueSortSelect').val(),
                     filters: collectValueFilters(),
                     show_deleted: showDeletedValues ? 1 : 0
                 },
@@ -3567,16 +3581,21 @@
             runValueScript();
         });
 
-        $(document).on('click', '#valueModal [data-bs-dismiss="modal"]', function (e) {
+        $('#valueModal').on('hide.bs.modal', function (event) {
             if (!valueModalStack.length) {
                 return;
             }
 
-            e.preventDefault();
+            // Closing a nested entry returns to the still-open parent form.
+            event.preventDefault();
             unwindNestedAdminValueModal();
         });
 
         $('#valueModal').on('hidden.bs.modal', function () {
+            if (valueModalStack.length) {
+                return;
+            }
+
             valueModalDirectory = null;
             valueModalStack = [];
         });
@@ -3791,6 +3810,10 @@
             }
         });
 
+        $('#valueSortSelect').on('change', function () {
+            loadValues(1);
+        });
+
         $('#savedAdminDirectoryFilterSelect').on('change', function () {
             applySavedAdminDirectoryFilter($(this).val(), true);
         });
@@ -3954,6 +3977,7 @@
                 data: {
                     page: page,
                     search: $('#valueSearchInput').val(),
+                    sort: $('#valueSortSelect').val(),
                     filters: collectValueFilters(),
                     show_deleted: showDeletedValues ? 1 : 0
                 },

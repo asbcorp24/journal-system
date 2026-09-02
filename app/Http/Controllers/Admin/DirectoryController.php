@@ -59,11 +59,12 @@ class DirectoryController extends Controller
 
         if ($request->filled('search')) {
             $search = trim($request->search);
+            $needle = '%' . $this->lowerSearchValue($search) . '%';
 
-            $query->where(function ($q) use ($search) {
-                $q->where('name', 'like', "%{$search}%")
-                    ->orWhere('code', 'like', "%{$search}%")
-                    ->orWhere('description', 'like', "%{$search}%");
+            $query->where(function ($q) use ($needle) {
+                $q->whereRaw('LOWER(name) LIKE ?', [$needle])
+                    ->orWhereRaw('LOWER(code) LIKE ?', [$needle])
+                    ->orWhereRaw('LOWER(description) LIKE ?', [$needle]);
             });
         }
 
@@ -298,9 +299,9 @@ class DirectoryController extends Controller
         $showDeleted = $request->boolean('show_deleted');
 
         $query = $directory->values()
-            ->with(['directory', 'creator', 'updater', 'deleter'])
-            ->orderBy('sort_order')
-            ->orderBy('value');
+            ->with(['directory', 'creator', 'updater', 'deleter']);
+
+        $this->applyValueSorting($query, $request->input('sort'));
 
         if ($showDeleted) {
             $query->withTrashed()->whereNotNull('deleted_at');
@@ -308,10 +309,11 @@ class DirectoryController extends Controller
 
         if ($request->filled('search')) {
             $search = trim($request->search);
+            $needle = '%' . $this->lowerSearchValue($search) . '%';
 
-            $query->where(function ($q) use ($search) {
-                $q->where('value', 'like', "%{$search}%")
-                    ->orWhere('code', 'like', "%{$search}%");
+            $query->where(function ($q) use ($needle) {
+                $q->whereRaw('LOWER(value) LIKE ?', [$needle])
+                    ->orWhereRaw('LOWER(code) LIKE ?', [$needle]);
             });
         }
 
@@ -1769,6 +1771,44 @@ class DirectoryController extends Controller
         }
 
         return $decoded;
+    }
+
+    private function applyValueSorting($query, ?string $sort): void
+    {
+        switch ($sort) {
+            case 'created_at_asc':
+                $query->orderBy('created_at')->orderBy('id');
+                break;
+            case 'value_asc':
+                $query->orderBy('value')->orderByDesc('id');
+                break;
+            case 'value_desc':
+                $query->orderByDesc('value')->orderByDesc('id');
+                break;
+            case 'code_asc':
+                $query->orderBy('code')->orderByDesc('id');
+                break;
+            case 'code_desc':
+                $query->orderByDesc('code')->orderByDesc('id');
+                break;
+            case 'sort_order_asc':
+                $query->orderBy('sort_order')->orderByDesc('id');
+                break;
+            case 'sort_order_desc':
+                $query->orderByDesc('sort_order')->orderByDesc('id');
+                break;
+            default:
+                // A newly added record should be visible immediately without manual sorting.
+                $query->orderByDesc('created_at')->orderByDesc('id');
+                break;
+        }
+    }
+
+    private function lowerSearchValue(string $value): string
+    {
+        return function_exists('mb_strtolower')
+            ? mb_strtolower($value, 'UTF-8')
+            : strtolower($value);
     }
 
 }

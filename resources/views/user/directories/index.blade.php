@@ -125,6 +125,17 @@
                                    class="form-control"
                                    style="min-width: 220px;"
                                    placeholder="Поиск по значениям">
+
+                            <select id="directoryValuesSortSelect" class="form-select" style="min-width: 220px;">
+                                <option value="created_at_desc">Сначала новые</option>
+                                <option value="created_at_asc">Сначала старые</option>
+                                <option value="value_asc">По названию: А-Я</option>
+                                <option value="value_desc">По названию: Я-А</option>
+                                <option value="code_asc">По коду: А-Я</option>
+                                <option value="code_desc">По коду: Я-А</option>
+                                <option value="sort_order_asc">По сортировке: по возрастанию</option>
+                                <option value="sort_order_desc">По сортировке: по убыванию</option>
+                            </select>
                         </div>
                     </div>
 
@@ -352,10 +363,14 @@
             return `${fieldKey}__${itemKey}__${subFieldKey}`;
         }
 
+        function isFieldVisibleInTable(field = {}) {
+            let value = field.show_in_table;
+
+            return value !== false && value !== 0 && value !== '0';
+        }
+
         function getVisibleTableSchema(schema = []) {
-            return (schema || []).filter(function (field) {
-                return field.show_in_table !== false;
-            });
+            return (schema || []).filter(isFieldVisibleInTable);
         }
 
         function getDirectoryTableSettings(directory = null) {
@@ -538,7 +553,7 @@
                     return;
                 }
 
-                if (field.show_in_table === false) {
+                if (!isFieldVisibleInTable(field)) {
                     return;
                 }
 
@@ -1034,6 +1049,7 @@
 
             let query = $.param({
                 search: $('#directoryValuesSearchInput').val() || '',
+                sort: $('#directoryValuesSortSelect').val(),
                 filters: collectDirectoryValueFilters()
             });
 
@@ -1607,6 +1623,7 @@
                 data: {
                     page: page,
                     search: $('#directoryValuesSearchInput').val(),
+                    sort: $('#directoryValuesSortSelect').val(),
                     filters: collectDirectoryValueFilters()
                 },
                 success: function (response) {
@@ -2107,7 +2124,6 @@
             $('#directoryValueModalTitle').text(`Добавить значение: ${directory.name}`);
             $('#directoryValueSubmitText').text('Сохранить и выбрать');
             renderDirectoryValueForm();
-            directoryValueModal.show();
         }
 
         function unwindNestedDirectoryValueModal(createdValue = null) {
@@ -2166,6 +2182,10 @@
             if (e.key === 'Enter') {
                 loadValues(1);
             }
+        });
+
+        $('#directoryValuesSortSelect').on('change', function () {
+            loadValues(1);
         });
 
         $('#savedDirectoryFilterSelect').on('change', function () {
@@ -2353,16 +2373,21 @@
             }, payload.image_remove || {});
         });
 
-        $(document).on('click', '#directoryValueModal [data-bs-dismiss="modal"]', function (e) {
+        $('#directoryValueModal').on('hide.bs.modal', function (event) {
             if (!directoryValueModalStack.length) {
+                return;
+            }
+
+            // The parent form remains visible while a linked directory is being edited.
+            event.preventDefault();
+            unwindNestedDirectoryValueModal();
+        });
+
+            $('#directoryValueModal').on('hidden.bs.modal', function () {
+                if (directoryValueModalStack.length) {
                     return;
                 }
 
-                e.preventDefault();
-                unwindNestedDirectoryValueModal();
-            });
-
-            $('#directoryValueModal').on('hidden.bs.modal', function () {
                 directoryValueModalDirectory = null;
                 directoryValueModalStack = [];
             });
@@ -2662,6 +2687,7 @@
                 data: {
                     page: page,
                     search: $('#directoryValuesSearchInput').val(),
+                    sort: $('#directoryValuesSortSelect').val(),
                     filters: collectDirectoryValueFilters(),
                     show_deleted: showDeletedDirectoryValues ? 1 : 0
                 },
